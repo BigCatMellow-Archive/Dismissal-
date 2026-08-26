@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f1e9">
+  <title>Dismissal · Scanner</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">D</span><span>Dismissal</span></div>
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html">Dispatcher</a>
+      <a class="active" href="scanner.html">Scanner</a>
+      <a href="runner.html">Runner</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="notice">Prototype mode: use the fictional demo barcodes shown on this page. Hardware scanners that act like keyboards can scan directly into the field.</div>
+    <section class="page-head">
+      <div>
+        <h1>Scan pickup</h1>
+        <p>Scan a family or pickup-group barcode. Every student assigned to that group is added to the active queue unless they are already waiting.</p>
+      </div>
+    </section>
+
+    <div class="scanner-shell">
+      <section class="panel scan-box">
+        <div class="scan-icon" aria-hidden="true">▥</div>
+        <div>
+          <strong>Ready for next scan</strong>
+          <div class="small">Keep this field focused for a USB or Bluetooth barcode scanner.</div>
+        </div>
+        <form id="scanForm">
+          <input class="scan-input" id="barcode" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Scan or type barcode" autofocus>
+        </form>
+        <div><button class="btn secondary" id="cameraButton" type="button">Use camera QR scanner</button></div>
+        <div class="camera-wrap" id="cameraWrap"><div id="reader"></div></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Last scan</h2></div>
+        <div class="panel-body">
+          <div class="last-scan" id="lastScan"><div class="empty">No pickup has been scanned yet.</div></div>
+        </div>
+        <div class="panel-head"><h2>Demo codes</h2></div>
+        <div class="panel-body">
+          <p><button class="btn ghost demo" data-code="FAM-101">FAM-101</button></p>
+          <p><button class="btn ghost demo" data-code="FAM-202">FAM-202</button></p>
+          <p><button class="btn ghost demo" data-code="CARPOOL-303">CARPOOL-303</button></p>
+          <p class="small">The barcode should contain only an opaque lookup code in production—not a student's name or other readable personal information.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="app.js"></script>
+  <script>
+    const input = document.querySelector('#barcode');
+    const lastScan = document.querySelector('#lastScan');
+    const form = document.querySelector('#scanForm');
+    let qr = null;
+
+    function showResult(code) {
+      const result = DismissalApp.scanPickupGroup(code);
+      if (!result.ok) {
+        lastScan.innerHTML = `<div class="error">${result.message}</div><div class="small">Code: ${escapeHtml(code)}</div>`;
+        return;
+      }
+      const created = result.created.map(x => `<div class="last-scan-card"><strong>${x.student.name}</strong><div class="small">Grade ${x.student.grade} · ${x.student.homeroom}</div></div>`).join('');
+      const existing = result.existing.map(x => `<div class="last-scan-card"><strong>${x.student.name}</strong><div class="small">Already active · ${DismissalApp.formatElapsed(x.dismissal.scannedAt)}</div></div>`).join('');
+      lastScan.innerHTML = `<div class="success">✓ ${result.group.name}</div>${created}${existing || ''}<div class="small">${result.created.length} added · ${result.existing.length} already active</div>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+    }
+
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      const code = input.value.trim();
+      if (code) showResult(code);
+      input.value = '';
+      input.focus();
+    });
+
+    document.querySelectorAll('.demo').forEach(btn => btn.addEventListener('click', () => {
+      showResult(btn.dataset.code);
+      input.focus();
+    }));
+
+    document.addEventListener('click', e => {
+      if (!e.target.closest('button') && !e.target.closest('#reader')) input.focus();
+    });
+
+    document.querySelector('#cameraButton').addEventListener('click', async () => {
+      const wrap = document.querySelector('#cameraWrap');
+      if (!window.Html5Qrcode) {
+        lastScan.innerHTML = '<div class="error">Camera scanner library could not load. Use the barcode field instead.</div>';
+        return;
+      }
+      if (qr) {
+        await qr.stop().catch(() => {});
+        qr = null;
+        wrap.classList.remove('active');
+        document.querySelector('#cameraButton').textContent = 'Use camera QR scanner';
+        return;
+      }
+      wrap.classList.add('active');
+      qr = new Html5Qrcode('reader');
+      try {
+        await qr.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 240, height: 240 } }, async decoded => {
+          showResult(decoded);
+          if (qr) {
+            await qr.stop().catch(() => {});
+            qr = null;
+            wrap.classList.remove('active');
+            document.querySelector('#cameraButton').textContent = 'Use camera QR scanner';
+          }
+        }, () => {});
+        document.querySelector('#cameraButton').textContent = 'Stop camera';
+      } catch (err) {
+        qr = null;
+        wrap.classList.remove('active');
+        lastScan.innerHTML = '<div class="error">Camera access was unavailable. Use a hardware scanner or type the code.</div>';
+      }
+    });
+  </script>
+</body>
+</html>
