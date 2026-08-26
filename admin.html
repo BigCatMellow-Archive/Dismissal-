@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f1e9">
+  <title>Dismissal · Admin</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">D</span><span>Dismissal</span></div>
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html">Dispatcher</a>
+      <a href="scanner.html">Scanner</a>
+      <a href="runner.html">Runner</a>
+      <a class="active" href="admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="notice">Prototype mode only. This page shows fictional records so the pickup-group relationship can be tested without real school information.</div>
+    <section class="page-head">
+      <div>
+        <h1>Pickup groups</h1>
+        <p>A barcode belongs to a pickup group. A group can contain siblings or a carpool, and one student can belong to more than one authorized group.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Demo records</h2></div>
+      <div class="panel-body"><div class="admin-grid" id="groups"></div></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    function render() {
+      const state = DismissalApp.loadState();
+      document.querySelector('#groups').innerHTML = state.pickupGroups.map(group => {
+        const members = group.studentIds.map(id => state.students.find(s => s.id === id)).filter(Boolean);
+        return `<article class="admin-card">
+          <div class="student-name">${group.name}</div>
+          <p><span class="code">${group.token}</span></p>
+          ${members.map(s => `<div style="margin-top:10px"><strong>${s.name}</strong><div class="small">Grade ${s.grade} · ${s.homeroom}</div></div>`).join('')}
+        </article>`;
+      }).join('');
+    }
+    render();
+  </script>
+</body>
+</html>
