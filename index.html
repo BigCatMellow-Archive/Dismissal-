@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f1e9">
+  <title>Dismissal · Dispatcher</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">D</span><span>Dismissal</span></div>
+    <nav class="nav" aria-label="Primary">
+      <a class="active" href="index.html">Dispatcher</a>
+      <a href="scanner.html">Scanner</a>
+      <a href="runner.html">Runner</a>
+      <a href="admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="notice">Prototype mode: this build uses fictional records stored only in this browser. Do not enter real student information yet.</div>
+    <section class="page-head">
+      <div>
+        <h1>Live dismissal</h1>
+        <p>Students appear here as soon as their pickup group is scanned. Wait timers continue until each student is completed individually.</p>
+      </div>
+      <button class="btn ghost" id="resetDemo">Reset demo</button>
+    </section>
+
+    <section class="stats" aria-label="Dismissal summary">
+      <div class="stat"><div class="stat-label">Active</div><div class="stat-value" id="statActive">0</div></div>
+      <div class="stat"><div class="stat-label">Needs attention</div><div class="stat-value" id="statProblem">0</div></div>
+      <div class="stat"><div class="stat-label">Waiting 5+ min</div><div class="stat-value" id="statFive">0</div></div>
+      <div class="stat"><div class="stat-label">Completed today</div><div class="stat-value" id="statComplete">0</div></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Active queue</h2><span class="small">Yellow at 5 min · red at 10 min</span></div>
+      <div class="panel-body"><div class="queue" id="queue"></div></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    const queue = document.querySelector('#queue');
+    function refresh() {
+      DismissalApp.renderQueue(queue, { actor: 'Dispatcher', onChange: refresh });
+      const s = DismissalApp.stats();
+      document.querySelector('#statActive').textContent = s.active;
+      document.querySelector('#statProblem').textContent = s.problem;
+      document.querySelector('#statFive').textContent = s.fivePlus;
+      document.querySelector('#statComplete').textContent = s.completed;
+    }
+    document.querySelector('#resetDemo').addEventListener('click', () => {
+      if (confirm('Reset the fictional prototype queue?')) DismissalApp.resetDemo();
+    });
+    DismissalApp.bindLiveRefresh(refresh);
+    refresh();
+    setInterval(() => { DismissalApp.updateTimers(); refreshStatsOnly(); }, 1000);
+    function refreshStatsOnly() {
+      const s = DismissalApp.stats();
+      document.querySelector('#statActive').textContent = s.active;
+      document.querySelector('#statProblem').textContent = s.problem;
+      document.querySelector('#statFive').textContent = s.fivePlus;
+      document.querySelector('#statComplete').textContent = s.completed;
+    }
+  </script>
+</body>
+</html>
