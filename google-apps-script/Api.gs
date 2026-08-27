@@ -383,7 +383,7 @@ function apiBridgeOutput_(origin, response) {
   const safeOrigin = JSON.stringify(String(origin || DISMISSAL_API.DEFAULT_ORIGIN));
   const safePayload = JSON.stringify(response).replace(/</g, '\\u003c');
   const html = '<!doctype html><html><head><meta charset="utf-8"></head><body><script>' +
-    'parent.postMessage(' + safePayload + ',' + safeOrigin + ');' +
+    'window.top.postMessage(' + safePayload + ',' + safeOrigin + ');' +
     '<\/script></body></html>';
   return HtmlService.createHtmlOutput(html)
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
