@@ -4,65 +4,41 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#214289">
-  <title>Dismissal · Dispatcher</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Dismissal</title>
+  <link rel="stylesheet" href="styles.css?v=3">
 </head>
 <body>
-  <header class="appbar">
-    <div class="appbar-copy">
-      <span class="appbar-kicker">Dismissal</span>
-      <strong class="appbar-title">Dispatcher</strong>
+  <div id="boot" class="boot-screen">
+    <div class="boot-mark">D</div>
+    <strong>Loading Dismissal…</strong>
+  </div>
+
+  <header class="appbar" id="appbar" hidden>
+    <div class="brand-block">
+      <span class="school-name" id="schoolName">Dismissal</span>
+      <strong class="view-title" id="viewTitle">Dismissal</strong>
     </div>
-    <button class="icon-button" type="button" data-app-menu aria-label="Open menu">Menu</button>
+    <div class="header-search" id="headerSearch" hidden>
+      <input id="directorySearch" type="search" autocomplete="off" placeholder="Name, Grade, or ID" aria-label="Search pickup directory">
+    </div>
+    <button class="menu-button" id="menuButton" type="button">Menu</button>
   </header>
 
-  <main>
-    <div class="prototype-chip">Demo data only</div>
+  <main id="app" hidden></main>
+  <div id="toast" class="toast" aria-live="assertive"></div>
 
-    <section class="screen-head">
-      <h1>Who are we waiting on?</h1>
-      <p>Oldest and problem pickups rise to the top. Tap a student only when you need to do something.</p>
+  <div id="modal" class="modal-layer" hidden>
+    <div class="modal-backdrop" data-close-modal></div>
+    <section class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-grab"></div>
+      <div id="modalContent"></div>
     </section>
+  </div>
 
-    <section class="summary-row" aria-label="Dismissal summary">
-      <div class="summary-tile">
-        <div class="summary-number" id="statActive">0</div>
-        <div class="summary-label">Waiting now</div>
-      </div>
-      <div class="summary-tile attention">
-        <div class="summary-number" id="statProblem">0</div>
-        <div class="summary-label">Need attention</div>
-      </div>
-    </section>
-    <div class="completed-note" id="completedNote">0 completed today</div>
-
-    <div class="section-label">Students waiting</div>
-    <section class="queue" id="queue" aria-live="polite"></section>
-  </main>
-
-  <script src="app.js"></script>
-  <script>
-    const queue = document.querySelector('#queue');
-
-    function refresh() {
-      DismissalApp.renderQueue(queue, { role: 'dispatcher', actor: 'Dispatcher', onChange: refresh });
-      refreshStats();
-    }
-
-    function refreshStats() {
-      const s = DismissalApp.stats();
-      document.querySelector('#statActive').textContent = s.active;
-      document.querySelector('#statProblem').textContent = s.problem;
-      document.querySelector('#completedNote').textContent = `${s.completed} completed today`;
-    }
-
-    DismissalApp.bindMenu('dispatcher');
-    DismissalApp.bindLiveRefresh(refresh);
-    refresh();
-    setInterval(() => {
-      DismissalApp.updateTimers();
-      refreshStats();
-    }, 1000);
-  </script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
