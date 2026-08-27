@@ -43,6 +43,12 @@
     function render() {
       const state = DismissalApp.loadState();
       const query = search.value.trim().toLowerCase();
+
+      if (!query && state.pickupGroups.length > 20) {
+        root.innerHTML = `<div class="empty-state"><strong>${state.pickupGroups.length} pickup groups</strong><span>Type a family, student, or barcode above to find one.</span></div>`;
+        return;
+      }
+
       const groups = state.pickupGroups.filter(group => {
         const members = group.studentIds.map(id => state.students.find(s => s.id === id)).filter(Boolean);
         const text = [group.name, group.token, ...members.flatMap(s => [s.name, s.grade, s.homeroom])].join(' ').toLowerCase();
