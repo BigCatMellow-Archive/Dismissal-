@@ -2,36 +2,35 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f4f1e9">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f1eb">
   <title>Dismissal · Runner</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand"><span class="brand-mark">D</span><span>Dismissal</span></div>
-    <nav class="nav" aria-label="Primary">
-      <a href="index.html">Dispatcher</a>
-      <a href="scanner.html">Scanner</a>
-      <a class="active" href="runner.html">Runner</a>
-      <a href="admin.html">Admin</a>
-    </nav>
+  <header class="appbar">
+    <div class="appbar-copy">
+      <span class="appbar-kicker">Dismissal</span>
+      <strong class="appbar-title">Runner</strong>
+    </div>
+    <button class="icon-button" type="button" data-app-menu aria-label="Open menu">Menu</button>
   </header>
 
   <main>
-    <div class="notice">Prototype mode: status changes are shared between tabs on this browser. Production will use authenticated real-time accounts across devices.</div>
-    <section class="page-head">
-      <div>
-        <h1>Student runners</h1>
-        <p>Claim a student so other staff know someone is handling the request, then update the status as the student moves toward pickup.</p>
-      </div>
-      <button class="btn ghost" id="setName">Set my name</button>
+    <div class="prototype-chip">Demo data only</div>
+
+    <button class="runner-identity" id="identityButton" type="button">
+      <span>Working as<strong id="runnerName">Not set</strong></span>
+      <span class="change">Change</span>
+    </button>
+
+    <section class="screen-head">
+      <h1>Who needs you?</h1>
+      <p>Tap a student. The next step will appear. You do not need to remember the process.</p>
     </section>
 
-    <section class="panel">
-      <div class="panel-head"><h2>Students waiting</h2><span class="small" id="runnerName"></span></div>
-      <div class="panel-body"><div class="queue" id="queue"></div></div>
-    </section>
+    <div class="section-label">Students waiting</div>
+    <section class="queue" id="queue" aria-live="polite"></section>
   </main>
 
   <script src="app.js"></script>
@@ -39,20 +38,24 @@
     const queue = document.querySelector('#queue');
     const runnerName = document.querySelector('#runnerName');
 
-    function getActor() {
-      return sessionStorage.getItem('dismissal-actor') || 'Runner';
+    function actor() {
+      return DismissalApp.getActor() || 'Runner';
     }
+
     function refresh() {
-      runnerName.textContent = `Working as: ${getActor()}`;
-      DismissalApp.renderQueue(queue, { runner: true, actor: getActor(), onChange: refresh });
+      runnerName.textContent = DismissalApp.getActor() || 'Not set';
+      DismissalApp.renderQueue(queue, { role: 'runner', actor: actor(), onChange: refresh });
     }
-    document.querySelector('#setName').addEventListener('click', () => {
-      const name = prompt('Name or initials shown to other staff:', getActor());
-      if (name?.trim()) sessionStorage.setItem('dismissal-actor', name.trim());
-      refresh();
-    });
+
+    function askName(required = false) {
+      DismissalApp.openNameModal({ required, onSave: refresh });
+    }
+
+    document.querySelector('#identityButton').addEventListener('click', () => askName(false));
+    DismissalApp.bindMenu('runner');
     DismissalApp.bindLiveRefresh(refresh);
     refresh();
+    if (!DismissalApp.getActor()) askName(true);
     setInterval(DismissalApp.updateTimers, 1000);
   </script>
 </body>
