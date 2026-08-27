@@ -42,9 +42,26 @@
       return DismissalApp.getActor() || 'Runner';
     }
 
+    function keepOnlyMyWork() {
+      const state = DismissalApp.loadState();
+      const me = actor();
+      queue.querySelectorAll('[data-dismissal-id]').forEach(card => {
+        const d = state.dismissals.find(x => x.id === card.dataset.dismissalId);
+        if (!d) return;
+        const available = d.status === 'CALLED' || d.status === 'CALL_AGAIN';
+        const mine = d.claimedBy === me && (d.status === 'CLAIMED' || d.status === 'CANT_FIND');
+        card.hidden = !(available || mine);
+      });
+      const visibleCards = [...queue.querySelectorAll('[data-dismissal-id]')].filter(card => !card.hidden);
+      if (!visibleCards.length && state.dismissals.some(d => d.status !== 'COMPLETE')) {
+        queue.innerHTML = '<div class="empty-state"><div class="empty-icon">✓</div><strong>You are caught up</strong><span>Other students are already being handled.</span></div>';
+      }
+    }
+
     function refresh() {
       runnerName.textContent = DismissalApp.getActor() || 'Not set';
       DismissalApp.renderQueue(queue, { role: 'runner', actor: actor(), onChange: refresh });
+      keepOnlyMyWork();
     }
 
     function askName(required = false) {
