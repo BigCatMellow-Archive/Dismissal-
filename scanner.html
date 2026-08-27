@@ -50,7 +50,7 @@
       try { input.focus({ preventScroll: true }); } catch (_) { input.focus(); }
     }
 
-    function showFeedback(result, code) {
+    function showFeedback(result) {
       clearTimeout(feedbackTimer);
       feedback.className = 'scan-feedback';
       if (!result.ok) {
@@ -71,7 +71,7 @@
     function handleCode(code) {
       const clean = String(code || '').trim();
       if (!clean) return;
-      showFeedback(DismissalApp.scanPickupGroup(clean), clean);
+      showFeedback(DismissalApp.scanPickupGroup(clean));
     }
 
     form.addEventListener('submit', e => {
@@ -122,7 +122,7 @@
 
     document.querySelector('#cameraButton').addEventListener('click', async () => {
       if (!window.Html5Qrcode) {
-        showFeedback({ ok: false }, 'camera');
+        showFeedback({ ok: false });
         return;
       }
 
@@ -136,7 +136,6 @@
           onClick: async () => {
             if (qr) await qr.stop().catch(() => {});
             qr = null;
-            setTimeout(refocusScanner, 200);
           }
         }],
         dismissible: false
@@ -149,17 +148,17 @@
           if (qr) await qr.stop().catch(() => {});
           qr = null;
           DismissalApp.closeModal();
-          setTimeout(refocusScanner, 200);
         }, () => {});
       } catch (_) {
         qr = null;
         DismissalApp.closeModal();
-        showFeedback({ ok: false }, 'camera');
+        showFeedback({ ok: false });
       }
     });
 
     DismissalApp.bindMenu('scanner');
     window.addEventListener('load', refocusScanner);
+    window.addEventListener('dismissal-modal-closed', () => setTimeout(refocusScanner, 0));
     document.addEventListener('pointerdown', e => {
       if (!e.target.closest('button, a, input, #appModal')) setTimeout(refocusScanner, 0);
     });
