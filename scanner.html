@@ -2,132 +2,166 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f4f1e9">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f1eb">
   <title>Dismissal · Scanner</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand"><span class="brand-mark">D</span><span>Dismissal</span></div>
-    <nav class="nav" aria-label="Primary">
-      <a href="index.html">Dispatcher</a>
-      <a class="active" href="scanner.html">Scanner</a>
-      <a href="runner.html">Runner</a>
-      <a href="admin.html">Admin</a>
-    </nav>
+  <header class="appbar">
+    <div class="appbar-copy">
+      <span class="appbar-kicker">Dismissal</span>
+      <strong class="appbar-title">Scanner</strong>
+    </div>
+    <button class="icon-button" type="button" data-app-menu aria-label="Open menu">Menu</button>
   </header>
 
   <main>
-    <div class="notice">Prototype mode: use the fictional demo barcodes shown on this page. Hardware scanners that act like keyboards can scan directly into the field.</div>
-    <section class="page-head">
-      <div>
-        <h1>Scan pickup</h1>
-        <p>Scan a family or pickup-group barcode. Every student assigned to that group is added to the active queue unless they are already waiting.</p>
-      </div>
+    <div class="prototype-chip">Demo data only</div>
+
+    <section class="scan-stage">
+      <div class="scan-ready-mark" aria-hidden="true">▥</div>
+      <h1>Scan a car</h1>
+      <p class="scan-instruction">Point the barcode scanner at the family pass.</p>
+      <div class="scan-state">Ready</div>
+
+      <form id="scanForm" aria-label="Hardware barcode scanner input">
+        <input class="scan-hidden-input" id="barcode" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="none" aria-label="Barcode scanner input">
+      </form>
+
+      <button class="big-button secondary" id="cameraButton" type="button">Use phone camera</button>
+      <button class="help-button" id="helpButton" type="button">Can't scan?</button>
     </section>
-
-    <div class="scanner-shell">
-      <section class="panel scan-box">
-        <div class="scan-icon" aria-hidden="true">▥</div>
-        <div>
-          <strong>Ready for next scan</strong>
-          <div class="small">Keep this field focused for a USB or Bluetooth barcode scanner.</div>
-        </div>
-        <form id="scanForm">
-          <input class="scan-input" id="barcode" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Scan or type barcode" autofocus>
-        </form>
-        <div><button class="btn secondary" id="cameraButton" type="button">Use camera QR scanner</button></div>
-        <div class="camera-wrap" id="cameraWrap"><div id="reader"></div></div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head"><h2>Last scan</h2></div>
-        <div class="panel-body">
-          <div class="last-scan" id="lastScan"><div class="empty">No pickup has been scanned yet.</div></div>
-        </div>
-        <div class="panel-head"><h2>Demo codes</h2></div>
-        <div class="panel-body">
-          <p><button class="btn ghost demo" data-code="FAM-101">FAM-101</button></p>
-          <p><button class="btn ghost demo" data-code="FAM-202">FAM-202</button></p>
-          <p><button class="btn ghost demo" data-code="CARPOOL-303">CARPOOL-303</button></p>
-          <p class="small">The barcode should contain only an opaque lookup code in production—not a student's name or other readable personal information.</p>
-        </div>
-      </section>
-    </div>
   </main>
+
+  <aside class="scan-feedback" id="scanFeedback" aria-live="assertive"></aside>
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script src="app.js"></script>
   <script>
     const input = document.querySelector('#barcode');
-    const lastScan = document.querySelector('#lastScan');
     const form = document.querySelector('#scanForm');
+    const feedback = document.querySelector('#scanFeedback');
+    let feedbackTimer = null;
     let qr = null;
 
-    function showResult(code) {
-      const result = DismissalApp.scanPickupGroup(code);
-      if (!result.ok) {
-        lastScan.innerHTML = `<div class="error">${result.message}</div><div class="small">Code: ${escapeHtml(code)}</div>`;
-        return;
-      }
-      const created = result.created.map(x => `<div class="last-scan-card"><strong>${x.student.name}</strong><div class="small">Grade ${x.student.grade} · ${x.student.homeroom}</div></div>`).join('');
-      const existing = result.existing.map(x => `<div class="last-scan-card"><strong>${x.student.name}</strong><div class="small">Already active · ${DismissalApp.formatElapsed(x.dismissal.scannedAt)}</div></div>`).join('');
-      lastScan.innerHTML = `<div class="success">✓ ${result.group.name}</div>${created}${existing || ''}<div class="small">${result.created.length} added · ${result.existing.length} already active</div>`;
+    function refocusScanner() {
+      if (document.querySelector('#appModal:not([hidden])')) return;
+      try { input.focus({ preventScroll: true }); } catch (_) { input.focus(); }
     }
 
-    function escapeHtml(value) {
-      return String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+    function showFeedback(result, code) {
+      clearTimeout(feedbackTimer);
+      feedback.className = 'scan-feedback';
+      if (!result.ok) {
+        feedback.classList.add('error');
+        feedback.innerHTML = `<div class="feedback-head"><span class="feedback-icon">!</span><span>Not recognized</span></div><div class="feedback-students"><span>Try scanning again or use “Can't scan?”</span></div>`;
+      } else {
+        feedback.classList.add('success');
+        const people = [...result.created, ...result.existing];
+        feedback.innerHTML = `<div class="feedback-head"><span class="feedback-icon">✓</span><span>${DismissalApp.escapeHtml(result.group.name)}</span></div>
+          <div class="feedback-students">${people.map(x => `<span>${DismissalApp.escapeHtml(x.student.name)} · Grade ${DismissalApp.escapeHtml(x.student.grade)}</span>`).join('')}
+          ${result.existing.length ? '<span>Already waiting students were not duplicated.</span>' : ''}</div>`;
+      }
+      requestAnimationFrame(() => feedback.classList.add('show'));
+      feedbackTimer = setTimeout(() => feedback.classList.remove('show'), result.ok ? 2300 : 4200);
+      refocusScanner();
+    }
+
+    function handleCode(code) {
+      const clean = String(code || '').trim();
+      if (!clean) return;
+      showFeedback(DismissalApp.scanPickupGroup(clean), clean);
     }
 
     form.addEventListener('submit', e => {
       e.preventDefault();
-      const code = input.value.trim();
-      if (code) showResult(code);
+      handleCode(input.value);
       input.value = '';
-      input.focus();
+      refocusScanner();
     });
 
-    document.querySelectorAll('.demo').forEach(btn => btn.addEventListener('click', () => {
-      showResult(btn.dataset.code);
-      input.focus();
-    }));
+    function openManualEntry() {
+      DismissalApp.openModal({
+        eyebrow: 'Backup',
+        title: 'Type the pickup code',
+        body: '<label class="field-label" for="manualCode">Barcode number</label><input class="modal-input" id="manualCode" autocomplete="off" autocapitalize="characters" placeholder="Example: FAM-101">',
+        actions: [{
+          label: 'Find pickup',
+          kind: 'primary',
+          onClick: () => handleCode(document.querySelector('#manualCode')?.value)
+        }]
+      });
+      setTimeout(() => document.querySelector('#manualCode')?.focus(), 60);
+    }
 
-    document.addEventListener('click', e => {
-      if (!e.target.closest('button') && !e.target.closest('#reader')) input.focus();
+    function openDemoChoices() {
+      DismissalApp.openModal({
+        eyebrow: 'Prototype',
+        title: 'Choose a demo pass',
+        body: '<p>These are fictional pickup groups for testing.</p>',
+        actions: [
+          { label: 'FAM-101 · 2 students', kind: 'secondary', onClick: () => handleCode('FAM-101') },
+          { label: 'FAM-202 · 1 student', kind: 'secondary', onClick: () => handleCode('FAM-202') },
+          { label: 'CARPOOL-303 · 2 students', kind: 'secondary', onClick: () => handleCode('CARPOOL-303') }
+        ]
+      });
+    }
+
+    document.querySelector('#helpButton').addEventListener('click', () => {
+      DismissalApp.openModal({
+        eyebrow: 'Backup options',
+        title: "Can't scan the pass?",
+        body: '<p>Use one of these only when the normal scanner is unavailable.</p>',
+        actions: [
+          { label: 'Type the code', kind: 'primary', onClick: () => setTimeout(openManualEntry, 180) },
+          { label: 'Use a demo pass', kind: 'secondary', onClick: () => setTimeout(openDemoChoices, 180) }
+        ]
+      });
     });
 
     document.querySelector('#cameraButton').addEventListener('click', async () => {
-      const wrap = document.querySelector('#cameraWrap');
       if (!window.Html5Qrcode) {
-        lastScan.innerHTML = '<div class="error">Camera scanner library could not load. Use the barcode field instead.</div>';
+        showFeedback({ ok: false }, 'camera');
         return;
       }
-      if (qr) {
-        await qr.stop().catch(() => {});
-        qr = null;
-        wrap.classList.remove('active');
-        document.querySelector('#cameraButton').textContent = 'Use camera QR scanner';
-        return;
-      }
-      wrap.classList.add('active');
+
+      DismissalApp.openModal({
+        eyebrow: 'Phone camera',
+        title: 'Hold the barcode in the box',
+        body: '<div id="reader"></div>',
+        actions: [{
+          label: 'Stop camera',
+          kind: 'secondary',
+          onClick: async () => {
+            if (qr) await qr.stop().catch(() => {});
+            qr = null;
+            setTimeout(refocusScanner, 200);
+          }
+        }],
+        dismissible: false
+      });
+
       qr = new Html5Qrcode('reader');
       try {
-        await qr.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 240, height: 240 } }, async decoded => {
-          showResult(decoded);
-          if (qr) {
-            await qr.stop().catch(() => {});
-            qr = null;
-            wrap.classList.remove('active');
-            document.querySelector('#cameraButton').textContent = 'Use camera QR scanner';
-          }
+        await qr.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 240, height: 180 } }, async decoded => {
+          handleCode(decoded);
+          if (qr) await qr.stop().catch(() => {});
+          qr = null;
+          DismissalApp.closeModal();
+          setTimeout(refocusScanner, 200);
         }, () => {});
-        document.querySelector('#cameraButton').textContent = 'Stop camera';
-      } catch (err) {
+      } catch (_) {
         qr = null;
-        wrap.classList.remove('active');
-        lastScan.innerHTML = '<div class="error">Camera access was unavailable. Use a hardware scanner or type the code.</div>';
+        DismissalApp.closeModal();
+        showFeedback({ ok: false }, 'camera');
       }
+    });
+
+    DismissalApp.bindMenu('scanner');
+    window.addEventListener('load', refocusScanner);
+    document.addEventListener('pointerdown', e => {
+      if (!e.target.closest('button, a, input, #appModal')) setTimeout(refocusScanner, 0);
     });
   </script>
 </body>
