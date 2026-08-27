@@ -2,6 +2,21 @@
 
 This is the Google Workspace implementation of the Dismissal project. It keeps the same mobile-first workflow as the web prototype, but uses a Google Sheet as the data store and a Google Apps Script web app as the backend/UI.
 
+## Current roster source
+
+For the Nysmith deployment, the existing `Carpool` and `Table1` tabs are the source data.
+
+- `Carpool` is authoritative for students, homerooms, grades, and Carpool IDs.
+- `Table1` supplies the human-friendly family/group name for each Carpool ID.
+- `Students`, `PickupGroups`, and `PickupGroupStudents` are live normalized views used by the app. Do not manually maintain those three tabs when the live roster link is installed.
+- The barcode token is the numeric Carpool ID itself. A scan of that ID resolves to every student assigned to it in `Carpool`.
+
+The live formulas intentionally keep membership in a row-based relationship table, so the system is not limited to the four student columns visible in `Table1`.
+
+Grades are normalized for the operational UI to `Beg`, `PreK`, `K`, `1st`, `2nd`, through `8th`.
+
+If the live formulas are ever overwritten, add `Roster.gs` to the Apps Script project and run `syncCarpoolRoster()` once. The formulas then continue updating automatically when the source tabs change. The server-side directory cache lasts at most about one minute, so roster edits may take a short time to appear in an already-open web app.
+
 ## Why this version exists
 
 - no server to install or maintain
@@ -14,58 +29,51 @@ This is the Google Workspace implementation of the Dismissal project. It keeps t
 
 ## Files to create in Apps Script
 
-Create a Google Sheet, open **Extensions → Apps Script**, then create these project files and paste in the matching repo files:
+Open the backend Google Sheet, choose **Extensions → Apps Script**, and create these project files from the matching repo files:
 
 - `Code.gs`
+- `Roster.gs`
 - `Index.html`
 - `Styles.html`
 - `Client.html`
+
+`Roster.gs` is a maintenance helper; the current backend Sheet has already been linked to the roster. The live app can run without re-running it unless the normalized formulas are damaged or you make a fresh copy of the workbook.
 
 `appsscript.json` is included as a reference manifest. You only need to edit the manifest if you have enabled **Show "appsscript.json" manifest file in editor** in Apps Script project settings.
 
 ## First setup
 
-1. From the new Google Sheet, open **Extensions → Apps Script**.
-2. Add the four files above.
+1. From the Google Sheet, open **Extensions → Apps Script**.
+2. Add the files above.
 3. Save the project.
-4. Run `setupDismissalSystem()` once from the Apps Script editor and approve the requested Google permissions.
-5. The setup function creates these tabs:
-   - `Students`
-   - `PickupGroups`
-   - `PickupGroupStudents`
-   - `Staff`
-   - `Dismissals`
-   - `DismissalHistory`
-   - `DismissalEvents`
-   - `Settings`
-6. The Google account that runs setup is added to `Staff` as an `admin` when Apps Script can identify that account.
-7. For a safe test, run `seedDemoData()` and scan `FAM-101`, `FAM-202`, or `CARPOOL-303`.
+4. Run `setupDismissalSystem()` once and approve permissions.
+5. If this is a fresh workbook containing `Carpool` and `Table1`, run `syncCarpoolRoster()` once.
+6. Add staff accounts and roles in `Staff`.
+7. Deploy the project as a restricted Google Apps Script web app.
 
-## Sheet formats
+Do not run `seedDemoData()` on a workbook that already contains the real linked roster.
+
+## Internal sheet formats
 
 ### Students
 
 | Student ID | Display Name | Grade | Homeroom | Active |
 |---|---|---|---|---|
-| 12345 | Student Name | 3A | Jones / Smith | TRUE |
-
-`Student ID` must be unique.
+| generated ID | Student Name | 3rd | 3A | TRUE |
 
 ### PickupGroups
 
 | Pickup Group ID | Display Name | Barcode Token | Type | Active |
 |---|---|---|---|---|
-| F-123 | Smith Family | 482019 | family | TRUE |
-
-The barcode should contain the opaque `Barcode Token`, not the student's name.
+| PG-34499 | Family name | 34499 | family | TRUE |
 
 ### PickupGroupStudents
 
 | Pickup Group ID | Student ID | Active |
 |---|---|---|
-| F-123 | 12345 | TRUE |
+| PG-34499 | generated student ID | TRUE |
 
-A student can appear in more than one pickup group, which allows approved carpools or alternate pickup arrangements.
+A student can appear in more than one pickup group if the source roster supports an approved alternate arrangement.
 
 ### Staff
 
@@ -75,12 +83,7 @@ A student can appear in more than one pickup group, which allows approved carpoo
 
 Multiple roles are comma-separated, for example `scanner,dispatcher`. `admin` can use every screen.
 
-Supported roles:
-
-- `scanner`
-- `runner`
-- `dispatcher`
-- `admin`
+Supported roles are `scanner`, `runner`, `dispatcher`, and `admin`.
 
 ## Web app deployment
 
@@ -91,21 +94,21 @@ For a school Workspace deployment, restrict access to the school/domain rather t
 A practical first deployment for a single Workspace domain is:
 
 - **Who has access:** your Google Workspace domain
-- Try **Execute as me** first if all staff are in the same Workspace domain. Google notes that active-user email is generally available to users in the same Workspace domain even though it can be blank in some `execute as me` contexts.
-- If your Workspace policy still returns a blank active-user email, deploy **Execute as user accessing the web app**. Be aware that this changes authorization behavior because the app then runs under each staff member's Google identity.
+- Try **Execute as me** first if all staff are in the same Workspace domain.
+- If Workspace policy returns a blank active-user email, deploy **Execute as user accessing the web app**. This changes authorization behavior because the app then runs under each staff member's Google identity.
 
 Do not use an anonymous deployment for student dismissal data.
 
 ## Settings
 
-The `Settings` tab is created automatically. Defaults:
+The `Settings` tab includes:
 
 - `Allowed Domain` = `nysmithschool.com`
 - warning = 5 minutes
 - danger = 10 minutes
 - queue polling = 4000 ms
 
-The polling interval should generally stay around 3–6 seconds. The app caches the active queue briefly so multiple devices do not each force a complete Sheet read every second.
+The polling interval should generally stay around 3–6 seconds.
 
 ## Daily operation
 
@@ -117,5 +120,4 @@ The first app request on a new school day automatically moves the previous conte
 - Real student data belongs only in the private school Google Sheet.
 - Restrict the deployed web app to the school Workspace domain.
 - Keep the `Staff` sheet current and disable accounts that no longer need access.
-- Barcode tokens should be opaque and replaceable.
 - Review retention expectations for `DismissalHistory` and `DismissalEvents` with the school before long-term use.
