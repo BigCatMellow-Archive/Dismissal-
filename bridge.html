@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dismissal Bridge</title>
+</head>
+<body>
+<script>
+(function () {
+  'use strict';
+  try {
+    var raw = String(window.name || '');
+    var message = JSON.parse(raw);
+    if (!message || !message.requestId) throw new Error('Missing response payload.');
+    window.name = '';
+    window.top.postMessage(message, window.location.origin);
+    document.body.textContent = 'Response delivered.';
+  } catch (err) {
+    document.body.textContent = 'Dismissal bridge error: ' + (err && err.message ? err.message : String(err));
+  }
+})();
+</script>
+</body>
+</html>
