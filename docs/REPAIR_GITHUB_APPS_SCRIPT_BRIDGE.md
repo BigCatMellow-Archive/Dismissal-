@@ -24,7 +24,7 @@ Pass/fail proof for the current repair:
 | Hidden-iframe POST also reaches Apps Script | VERIFIED | `Devices → Last Seen` changes after Test 2 even though Test 2 times out. |
 | Device-key validation reaches the private Sheet | VERIFIED | `Last Seen` is written by `apiRequireDevice_()` after matching the key. |
 | The failure is currently on the response path, not the request path | VERIFIED | Backend side effect occurs but GitHub receives no matching `postMessage`. |
-| `Api.gs` currently sends the response with `parent.postMessage(...)` | VERIFIED | `apiBridgeOutput_()` uses `parent.postMessage(payload, origin)`. |
+| `Api.gs` originally sent the response with `parent.postMessage(...)` | VERIFIED | Pre-repair `apiBridgeOutput_()` used `parent.postMessage(payload, origin)`. |
 | Apps Script `HtmlOutput` client code runs in Google's HTML Service iframe sandbox | VERIFIED | Google Apps Script HTML Service documentation. |
 | `XFrameOptionsMode.ALLOWALL` permits framing but does not remove the HTML Service sandbox layer | VERIFIED | Google `HtmlOutput` / `XFrameOptionsMode` documentation. |
 
@@ -79,6 +79,14 @@ First-wave experiment:
 5. Record the result.
 
 No other transport, authentication, camera, queue, or roster code should change in this experiment.
+
+## Current status
+
+- GitHub source repair: **APPLIED** in commit `c528469004fc228942305d5c091bc59803fa3480`.
+- Actual Apps Script editor: **PENDING OPERATOR SYNC/DEPLOYMENT**.
+- Verification: **PENDING** `diagnostics.html` Test 2.
+
+The repair is not considered complete until the deployed Apps Script version contains the one-line change and Test 2 returns the matching response.
 
 ## Verification and rollback
 
