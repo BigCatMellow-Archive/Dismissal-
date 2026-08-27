@@ -1,0 +1,102 @@
+<script>
+(() => {
+  // Apps Script HTML Service runs inside Google's sandboxed iframe. Live
+  // getUserMedia() camera streams can be denied by the embedding frame before
+  // the browser is allowed to show a camera permission prompt. A native file
+  // capture input does not require a live MediaStream, so on phones this opens
+  // the device camera, captures one image, and decodes the barcode locally.
+
+  let picker = null;
+  let decoder = null;
+  let host = null;
+  let busy = false;
+
+  function ensurePicker() {
+    if (picker) return picker;
+    picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = 'image/*';
+    picker.setAttribute('capture', 'environment');
+    picker.hidden = true;
+    picker.addEventListener('change', onPhotoSelected);
+    document.body.appendChild(picker);
+    return picker;
+  }
+
+  function ensureDecoder() {
+    if (decoder) return decoder;
+    if (!window.Html5Qrcode) throw new Error('Barcode scanner library did not load.');
+    host = document.createElement('div');
+    host.id = 'photoBarcodeReader';
+    host.style.position = 'fixed';
+    host.style.left = '-10000px';
+    host.style.top = '0';
+    host.style.width = '320px';
+    host.style.height = '320px';
+    host.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(host);
+    decoder = new Html5Qrcode(host.id);
+    return decoder;
+  }
+
+  function showFallbackMessage(title, detail, success) {
+    const toast = document.querySelector('#toast');
+    if (!toast) {
+      alert(title + (detail ? '\n' + detail : ''));
+      return;
+    }
+    toast.className = 'toast ' + (success ? 'success' : 'error') + ' show';
+    toast.innerHTML = '<div class="toast-title"></div><div class="toast-detail"></div>';
+    toast.querySelector('.toast-title').textContent = title;
+    toast.querySelector('.toast-detail').textContent = detail || '';
+    window.setTimeout(() => toast.classList.remove('show'), success ? 2500 : 4500);
+  }
+
+  function submitDecodedCode(code) {
+    const input = document.querySelector('#barcodeInput');
+    const form = document.querySelector('#scanForm');
+    if (!input || !form) throw new Error('Scanner screen is no longer open.');
+    input.value = String(code || '').trim();
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  }
+
+  async function onPhotoSelected(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file || busy) return;
+
+    busy = true;
+    const state = document.querySelector('#scanState');
+    if (state) state.textContent = 'Reading photo…';
+
+    try {
+      const scanner = ensureDecoder();
+      const decoded = await scanner.scanFile(file, true);
+      submitDecodedCode(decoded);
+      showFallbackMessage('Barcode read', decoded, true);
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err || 'No barcode found.');
+      showFallbackMessage('Could not read barcode', 'Move closer, keep the barcode flat and well lit, then try again.', false);
+      console.warn('Photo barcode scan failed:', message);
+    } finally {
+      busy = false;
+      if (state) state.textContent = 'Ready';
+    }
+  }
+
+  // Intercept the existing camera button before Client.html's live-camera
+  // handler runs. This keeps the same UI while using native photo capture on
+  // Apps Script, where live getUserMedia() is unreliable/blocked.
+  document.addEventListener('click', event => {
+    const button = event.target.closest && event.target.closest('#cameraButton');
+    if (!button) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    try {
+      ensurePicker().click();
+    } catch (err) {
+      showFallbackMessage('Camera unavailable', 'Use the hardware scanner or type the code.', false);
+    }
+  }, true);
+})();
+</script>
