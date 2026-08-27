@@ -11,51 +11,84 @@
 <div class="wrap">
   <div class="card">
     <h1>Dismissal connection diagnostics</h1>
-    <p>This page tests the exact GitHub Pages → Apps Script boundary without changing your dismissal data.</p>
-    <div class="status" id="keyStatus"></div>
+    <p>This page tests the GitHub Pages → Apps Script boundary without changing dismissal data.</p>
+
+    <label for="backendUrl"><strong>Apps Script web app URL</strong></label>
+    <input id="backendUrl" type="url" autocomplete="off" spellcheck="false">
+    <button id="saveBackend" class="secondary">Use this backend URL</button>
+    <div class="status" id="backendStatus"></div>
+    <p class="muted">Use an <strong>/exec</strong> URL to test a deployed version. Use the <strong>/dev</strong> URL from Deploy → Test deployments to test the latest saved editor code.</p>
+
     <label for="deviceKey"><strong>Device Access Key</strong></label>
     <input id="deviceKey" type="password" autocomplete="off" placeholder="Paste the Access Key from the Devices sheet">
     <button id="saveKey" class="secondary">Use this key for diagnostics</button>
-    <p class="muted">The key is stored only in this browser's local storage, the same place the main GitHub Dismissal app uses.</p>
+    <div class="status" id="keyStatus"></div>
   </div>
 
   <div class="card">
     <h2>Test 1 — top-level Apps Script POST</h2>
-    <p class="muted">This opens the Apps Script request in a normal browser tab, where Google login cookies are first-party. If this reaches Apps Script, the device's <strong>Last Seen</strong> timestamp should update.</p>
+    <p class="muted">This opens the POST in a normal browser tab. If Apps Script reaches the device lookup, the Devices → Last Seen timestamp should update.</p>
     <button id="topLevel">Open backend test in new tab</button>
     <div class="status" id="topStatus">Not run yet.</div>
   </div>
 
   <div class="card">
     <h2>Test 2 — hidden iframe POST</h2>
-    <p class="muted">This reproduces the method used by the GitHub app. If Test 1 works but this test times out, browser/Google third-party authentication is the blocker.</p>
+    <p class="muted">This reproduces the transport used by the GitHub app.</p>
     <button id="iframeTest">Run hidden iframe test</button>
     <div class="status" id="iframeStatus">Not run yet.</div>
   </div>
 
   <div class="card">
     <h2>Interpretation</h2>
-    <div class="status">Top-level works + hidden iframe fails → Google authentication / third-party cookie boundary.
+    <div class="status">/dev works but /exec says “Script function not found: doPost” → deployed version is stale or points at a different project/version.
 
-Both fail → deployment URL/version/access setting or Apps Script code is not reaching doPost().
+/dev also says “Script function not found: doPost” → the current Apps Script project itself is not exposing doPost globally; verify Api.gs is a .gs file in that exact project and saved.
 
-Both work → the production app bridge/listener has a frontend bug.</div>
+Top-level works + hidden iframe fails → browser/Google cross-site authentication or iframe boundary.
+
+Both work → production frontend bridge/listener issue.</div>
   </div>
 </div>
 <script>
 (() => {
-  const API_URL = 'https://script.google.com/macros/s/AKfycbzh30zpmWNIKx-ulC-p7XhMNViHoMCdmUerVMqS6PEsr8oR9iMg2M5hX9fugmXTZ1-Hqg/exec';
+  const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzh30zpmWNIKx-ulC-p7XhMNViHoMCdmUerVMqS6PEsr8oR9iMg2M5hX9fugmXTZ1-Hqg/exec';
+  const URL_STORAGE = 'dismissal-diagnostic-backend-url-v1';
   const KEY_STORAGE = 'dismissal-device-key-v1';
+  let apiUrl = localStorage.getItem(URL_STORAGE) || DEFAULT_API_URL;
   let key = localStorage.getItem(KEY_STORAGE) || '';
+
+  const backendInput = document.querySelector('#backendUrl');
+  const backendStatus = document.querySelector('#backendStatus');
   const keyStatus = document.querySelector('#keyStatus');
   const keyInput = document.querySelector('#deviceKey');
 
+  function refreshBackendStatus() {
+    backendInput.value = apiUrl;
+    backendStatus.textContent = 'Testing: ' + apiUrl;
+    backendStatus.className = 'status ok';
+  }
+
   function refreshKeyStatus() {
-    keyStatus.textContent = key ? 'Device key loaded in this browser. Length: ' + key.length + ' characters.' : 'No device key is stored in this browser. Paste one below.';
+    keyStatus.textContent = key ? 'Device key loaded. Length: ' + key.length + ' characters.' : 'No device key loaded. Paste one above.';
     keyStatus.className = 'status ' + (key ? 'ok' : 'bad');
     keyInput.value = '';
   }
+
+  refreshBackendStatus();
   refreshKeyStatus();
+
+  document.querySelector('#saveBackend').addEventListener('click', () => {
+    const entered = String(backendInput.value || '').trim();
+    if (!/^https:\/\/script\.google\.com\//i.test(entered) || !\/\/(?:exec|dev)(?:[?#]|$)/i.test(entered)) {
+      backendStatus.textContent = 'Paste a complete Apps Script web app URL ending in /exec or /dev.';
+      backendStatus.className = 'status bad';
+      return;
+    }
+    apiUrl = entered;
+    localStorage.setItem(URL_STORAGE, apiUrl);
+    refreshBackendStatus();
+  });
 
   document.querySelector('#saveKey').addEventListener('click', () => {
     const entered = String(keyInput.value || '').trim();
@@ -72,7 +105,7 @@ Both work → the production app bridge/listener has a frontend bug.</div>
   function makeForm(target, requestId) {
     const form = document.createElement('form');
     form.method = 'POST';
-    form.action = API_URL;
+    form.action = apiUrl;
     form.target = target;
     form.style.display = 'none';
     const fields = { requestId, action: 'bootstrap', deviceKey: key, payload: JSON.stringify({view:'dispatcher'}) };
@@ -87,10 +120,10 @@ Both work → the production app bridge/listener has a frontend bug.</div>
 
   document.querySelector('#topLevel').addEventListener('click', () => {
     const status = document.querySelector('#topStatus');
-    if (!key) { status.textContent = 'Cannot test: enter a device key above first.'; status.className='status bad'; return; }
+    if (!key) { status.textContent = 'Cannot test: enter a device key first.'; status.className='status bad'; return; }
     const id = 'diag-top-' + Date.now();
     const form = makeForm('_blank', id);
-    status.textContent = 'POST opened in a new tab. After it loads, return here. Check whether the Devices → Last Seen timestamp changed.';
+    status.textContent = 'POST opened using:\n' + apiUrl + '\n\nRead the result in the new tab.';
     status.className='status ok';
     form.submit();
     setTimeout(() => form.remove(), 1000);
@@ -98,14 +131,14 @@ Both work → the production app bridge/listener has a frontend bug.</div>
 
   document.querySelector('#iframeTest').addEventListener('click', () => {
     const status = document.querySelector('#iframeStatus');
-    if (!key) { status.textContent = 'Cannot test: enter a device key above first.'; status.className='status bad'; return; }
+    if (!key) { status.textContent = 'Cannot test: enter a device key first.'; status.className='status bad'; return; }
     const id = 'diag-frame-' + Date.now();
     const frameName = 'diag_frame_' + Date.now();
     const iframe = document.createElement('iframe');
     iframe.name = frameName; iframe.style.display='none';
     document.body.appendChild(iframe);
     const form = makeForm(frameName, id);
-    status.textContent = 'Waiting up to 15 seconds for Apps Script postMessage…';
+    status.textContent = 'Waiting up to 15 seconds for Apps Script postMessage…\n' + apiUrl;
     status.className='status';
     let finished = false;
     const listener = event => {
