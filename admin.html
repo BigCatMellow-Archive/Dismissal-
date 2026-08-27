@@ -2,50 +2,80 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f4f1e9">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f1eb">
   <title>Dismissal · Admin</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand"><span class="brand-mark">D</span><span>Dismissal</span></div>
-    <nav class="nav" aria-label="Primary">
-      <a href="index.html">Dispatcher</a>
-      <a href="scanner.html">Scanner</a>
-      <a href="runner.html">Runner</a>
-      <a class="active" href="admin.html">Admin</a>
-    </nav>
+  <header class="appbar">
+    <div class="appbar-copy">
+      <span class="appbar-kicker">Dismissal</span>
+      <strong class="appbar-title">Admin</strong>
+    </div>
+    <button class="icon-button" type="button" data-app-menu aria-label="Open menu">Menu</button>
   </header>
 
   <main>
-    <div class="notice">Prototype mode only. This page shows fictional records so the pickup-group relationship can be tested without real school information.</div>
-    <section class="page-head">
-      <div>
-        <h1>Pickup groups</h1>
-        <p>A barcode belongs to a pickup group. A group can contain siblings or a carpool, and one student can belong to more than one authorized group.</p>
-      </div>
+    <div class="prototype-chip">Demo data only</div>
+
+    <section class="screen-head">
+      <h1>Find a pickup</h1>
+      <p>Search by family, barcode, student, grade, or homeroom.</p>
     </section>
 
-    <section class="panel">
-      <div class="panel-head"><h2>Demo records</h2></div>
-      <div class="panel-body"><div class="admin-grid" id="groups"></div></div>
+    <div class="admin-search">
+      <input class="search-input" id="search" type="search" autocomplete="off" placeholder="Search families or students" aria-label="Search pickup groups">
+    </div>
+
+    <section class="admin-list" id="groups"></section>
+
+    <section class="admin-tools">
+      <button class="danger-button" id="resetDemo" type="button">Reset demo data</button>
     </section>
   </main>
 
   <script src="app.js"></script>
   <script>
+    const root = document.querySelector('#groups');
+    const search = document.querySelector('#search');
+
     function render() {
       const state = DismissalApp.loadState();
-      document.querySelector('#groups').innerHTML = state.pickupGroups.map(group => {
+      const query = search.value.trim().toLowerCase();
+      const groups = state.pickupGroups.filter(group => {
+        const members = group.studentIds.map(id => state.students.find(s => s.id === id)).filter(Boolean);
+        const text = [group.name, group.token, ...members.flatMap(s => [s.name, s.grade, s.homeroom])].join(' ').toLowerCase();
+        return !query || text.includes(query);
+      });
+
+      if (!groups.length) {
+        root.innerHTML = '<div class="empty-state"><strong>No matches</strong><span>Try a family name, student name, or barcode.</span></div>';
+        return;
+      }
+
+      root.innerHTML = groups.map(group => {
         const members = group.studentIds.map(id => state.students.find(s => s.id === id)).filter(Boolean);
         return `<article class="admin-card">
-          <div class="student-name">${group.name}</div>
-          <p><span class="code">${group.token}</span></p>
-          ${members.map(s => `<div style="margin-top:10px"><strong>${s.name}</strong><div class="small">Grade ${s.grade} · ${s.homeroom}</div></div>`).join('')}
+          <h2>${DismissalApp.escapeHtml(group.name)}</h2>
+          <span class="code">${DismissalApp.escapeHtml(group.token)}</span>
+          ${members.map(s => `<div class="admin-member"><strong>${DismissalApp.escapeHtml(s.name)}</strong><span>Grade ${DismissalApp.escapeHtml(s.grade)} · ${DismissalApp.escapeHtml(s.homeroom)}</span></div>`).join('')}
         </article>`;
       }).join('');
     }
+
+    search.addEventListener('input', render);
+    document.querySelector('#resetDemo').addEventListener('click', () => {
+      DismissalApp.openModal({
+        eyebrow: 'Prototype tools',
+        title: 'Reset the demo?',
+        body: '<p>This clears the fictional dismissal queue and restores the demo pickup groups.</p>',
+        actions: [{ label: 'Reset demo', kind: 'warning', onClick: () => { DismissalApp.resetDemo(); render(); } }]
+      });
+    });
+
+    DismissalApp.bindMenu('admin');
+    DismissalApp.bindLiveRefresh(render);
     render();
   </script>
 </body>
