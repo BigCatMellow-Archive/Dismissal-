@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#214289">
+  <title>Dismissal Camera</title>
+  <style>
+    :root{--primary:#214289;--accent:#f6b756;--bg:#0e1526;--surface:#fff;--text:#1f2937;--muted:#6b7280;--success:#059669;--error:#dc2626}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;font:16px/1.4 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg)}
+    body{min-height:100vh;color:#fff;display:flex;flex-direction:column}.top{padding:14px 16px 12px;background:var(--primary);border-bottom:3px solid var(--accent)}
+    .kicker{display:block;font-size:.68rem;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.72)}h1{margin:2px 0 0;font-size:1.25rem}
+    main{width:min(680px,100%);margin:auto;padding:16px;display:grid;gap:14px}.camera-card{position:relative;overflow:hidden;border-radius:18px;background:#000;min-height:52vh;box-shadow:0 14px 40px rgba(0,0,0,.32)}
+    #reader{width:100%;min-height:52vh}#reader video{object-fit:cover!important}.scan-guide{position:absolute;inset:50% auto auto 50%;width:min(82vw,520px);height:145px;transform:translate(-50%,-50%);border:3px solid rgba(255,255,255,.92);border-radius:16px;pointer-events:none;box-shadow:0 0 0 9999px rgba(0,0,0,.22)}
+    .status{padding:14px 16px;border-radius:14px;background:var(--surface);color:var(--text);box-shadow:0 6px 24px rgba(0,0,0,.18)}.status strong{display:block;font-size:1.08rem}.status span{display:block;margin-top:3px;color:var(--muted);font-size:.86rem}.status.ok{border-left:6px solid var(--success)}.status.error{border-left:6px solid var(--error)}
+    .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.btn{min-height:54px;border:0;border-radius:14px;font:inherit;font-weight:900}.btn.primary{background:var(--primary);color:#fff}.btn.secondary{background:#fff;color:var(--primary)}
+    .foot{text-align:center;color:rgba(255,255,255,.64);font-size:.78rem;padding-bottom:env(safe-area-inset-bottom,0)}
+  </style>
+</head>
+<body>
+  <header class="top"><span class="kicker">Dismissal</span><h1>Live car scanner</h1></header>
+  <main>
+    <section class="camera-card"><div id="reader"></div><div class="scan-guide" aria-hidden="true"></div></section>
+    <div class="status" id="status"><strong>Starting camera…</strong><span>Hold the family barcode inside the box.</span></div>
+    <div class="actions"><button class="btn secondary" id="restart" type="button">Restart camera</button><button class="btn primary" id="close" type="button">Close scanner</button></div>
+    <div class="foot">The camera stays open between cars. Student data is not stored on this page.</div>
+  </main>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script>
+  (() => {
+    const params = new URLSearchParams(location.search);
+    const session = String(params.get('session') || '');
+    const status = document.querySelector('#status');
+    let scanner = null;
+    let running = false;
+    let starting = false;
+    let awaiting = false;
+    let lastCode = '';
+    let lastAt = 0;
+
+    function setStatus(title, detail, kind='') {
+      status.className = 'status' + (kind ? ' ' + kind : '');
+      status.innerHTML = '<strong></strong><span></span>';
+      status.querySelector('strong').textContent = title;
+      status.querySelector('span').textContent = detail || '';
+    }
+
+    function validGoogleOrigin(origin) {
+      try {
+        const u = new URL(origin);
+        return u.protocol === 'https:' && (u.hostname === 'script.google.com' || u.hostname.endsWith('.googleusercontent.com'));
+      } catch (_) { return false; }
+    }
+
+    async function stop() {
+      if (!scanner) return;
+      try { if (running) await scanner.stop(); } catch (_) {}
+      running = false;
+      try { await scanner.clear(); } catch (_) {}
+      scanner = null;
+    }
+
+    async function start() {
+      if (starting || running) return;
+      if (!session || !window.opener) {
+        setStatus('Open this from Dismissal', 'Return to the Dismissal app and tap Use phone camera.', 'error');
+        return;
+      }
+      if (!window.Html5Qrcode) {
+        setStatus('Scanner library did not load', 'Check the network connection and try again.', 'error');
+        return;
+      }
+      starting = true;
+      setStatus('Starting camera…', 'The browser may ask for camera permission.');
+      try {
+        scanner = new Html5Qrcode('reader', {
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.ITF
+          ],
+          verbose: false
+        });
+        await scanner.start(
+          { facingMode: 'environment' },
+          { fps: 15, qrbox: { width: 300, height: 140 }, aspectRatio: 1.6 },
+          decoded => handleCode(decoded),
+          () => {}
+        );
+        running = true;
+        setStatus('Ready', 'Hold the family barcode inside the box.');
+      } catch (err) {
+        await stop();
+        setStatus('Camera could not start', 'Allow camera access for this site, then tap Restart camera.', 'error');
+      } finally {
+        starting = false;
+      }
+    }
+
+    function handleCode(raw) {
+      const code = String(raw || '').trim();
+      if (!code || awaiting) return;
+      const now = Date.now();
+      if (code === lastCode && now - lastAt < 2500) return;
+      lastCode = code;
+      lastAt = now;
+      awaiting = true;
+      setStatus('Calling pickup ' + code + '…', 'Sending to the school dismissal system.');
+      try { navigator.vibrate?.(40); } catch (_) {}
+      window.opener.postMessage({ type: 'dismissal-camera-scan', session, code }, '*');
+    }
+
+    window.addEventListener('message', event => {
+      if (!validGoogleOrigin(event.origin)) return;
+      const msg = event.data;
+      if (!msg || msg.type !== 'dismissal-camera-result' || msg.session !== session) return;
+      awaiting = false;
+      if (msg.ok) {
+        const names = Array.isArray(msg.names) ? msg.names.join(', ') : '';
+        setStatus(msg.group || 'Pickup called', names || 'Ready for the next car.', 'ok');
+        try { navigator.vibrate?.([45, 45, 45]); } catch (_) {}
+        setTimeout(() => { if (!awaiting) setStatus('Ready', 'Hold the next family barcode inside the box.'); }, 1500);
+      } else {
+        setStatus('Scan not accepted', msg.error || 'Try the barcode again.', 'error');
+        setTimeout(() => { if (!awaiting) setStatus('Ready', 'Hold the family barcode inside the box.'); }, 2200);
+      }
+    });
+
+    document.querySelector('#restart').addEventListener('click', async () => { await stop(); await start(); });
+    document.querySelector('#close').addEventListener('click', () => window.close());
+    window.addEventListener('pagehide', () => { stop(); });
+    start();
+  })();
+  </script>
+</body>
+</html>
