@@ -5,160 +5,186 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Dismissal Diagnostics</title>
   <style>
-    :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1f2937;background:#f0f2f7}*{box-sizing:border-box}body{margin:0;padding:24px}.wrap{max-width:760px;margin:auto}.card{background:#fff;border:1px solid #e2e5eb;border-radius:16px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px}h1,h2{margin-top:0}button{width:100%;min-height:54px;border:0;border-radius:12px;background:#214289;color:#fff;font-weight:800;font-size:1rem;padding:12px;margin-top:10px}button.secondary{background:#fff;color:#214289;border:1px solid #d7dce5}input{width:100%;min-height:52px;border:1px solid #cbd5e1;border-radius:10px;padding:10px 12px;font:inherit;margin-top:8px}.status{margin-top:14px;padding:12px;border-radius:10px;background:#f7f8fb;white-space:pre-wrap;word-break:break-word}.ok{border-left:5px solid #059669}.bad{border-left:5px solid #dc2626}.muted{color:#6b7280;font-size:.9rem}code{word-break:break-all}</style>
+    :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1f2937;background:#f0f2f7}*{box-sizing:border-box}body{margin:0;padding:24px}.wrap{max-width:760px;margin:auto}.card{background:#fff;border:1px solid #e2e5eb;border-radius:16px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px}h1,h2{margin-top:0}button{width:100%;min-height:54px;border:0;border-radius:12px;background:#214289;color:#fff;font-weight:800;font-size:1rem;padding:12px;margin-top:10px;cursor:pointer}button.secondary{background:#fff;color:#214289;border:1px solid #d7dce5}input{width:100%;min-height:52px;border:1px solid #cbd5e1;border-radius:10px;padding:10px 12px;font:inherit;margin-top:8px}.status{margin-top:14px;padding:12px;border-radius:10px;background:#f7f8fb;white-space:pre-wrap;word-break:break-word}.ok{border-left:5px solid #059669}.bad{border-left:5px solid #dc2626}.muted{color:#6b7280;font-size:.9rem}</style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
     <h1>Dismissal connection diagnostics</h1>
-    <p>This page tests the GitHub Pages → Apps Script boundary without changing dismissal data.</p>
+    <p>This page tests GitHub Pages → Apps Script without changing dismissal data.</p>
 
     <label for="backendUrl"><strong>Apps Script web app URL</strong></label>
     <input id="backendUrl" type="url" autocomplete="off" spellcheck="false">
-    <button id="saveBackend" class="secondary">Use this backend URL</button>
+    <button id="saveBackend" class="secondary" type="button">Use this backend URL</button>
     <div class="status" id="backendStatus"></div>
-    <p class="muted">Use an <strong>/exec</strong> URL to test a deployed version. Use the <strong>/dev</strong> URL from Deploy → Test deployments to test the latest saved editor code.</p>
+    <p class="muted">Use /exec for a deployed version or /dev from Deploy → Test deployments for the latest saved editor code.</p>
 
     <label for="deviceKey"><strong>Device Access Key</strong></label>
-    <input id="deviceKey" type="password" autocomplete="off" placeholder="Paste the Access Key from the Devices sheet">
-    <button id="saveKey" class="secondary">Use this key for diagnostics</button>
+    <input id="deviceKey" type="password" autocomplete="off" placeholder="Paste the Access Key from Devices">
+    <button id="saveKey" class="secondary" type="button">Use this key for diagnostics</button>
     <div class="status" id="keyStatus"></div>
   </div>
 
   <div class="card">
-    <h2>Test 1 — top-level Apps Script POST</h2>
-    <p class="muted">This opens the POST in a normal browser tab. If Apps Script reaches the device lookup, the Devices → Last Seen timestamp should update.</p>
-    <button id="topLevel">Open backend test in new tab</button>
+    <h2>Test 1 — top-level POST</h2>
+    <p class="muted">Opens the Apps Script POST as a normal browser tab.</p>
+    <button id="topLevel" type="button">Open backend test in new tab</button>
     <div class="status" id="topStatus">Not run yet.</div>
   </div>
 
   <div class="card">
     <h2>Test 2 — hidden iframe POST</h2>
-    <p class="muted">This reproduces the transport used by the GitHub app.</p>
-    <button id="iframeTest">Run hidden iframe test</button>
+    <p class="muted">Reproduces the transport used by the GitHub app.</p>
+    <button id="iframeTest" type="button">Run hidden iframe test</button>
     <div class="status" id="iframeStatus">Not run yet.</div>
   </div>
 
   <div class="card">
     <h2>Interpretation</h2>
-    <div class="status">/dev works but /exec says “Script function not found: doPost” → deployed version is stale or points at a different project/version.
+    <div class="status">/dev works but /exec says “Script function not found: doPost” → deployed version is stale.
 
-/dev also says “Script function not found: doPost” → the current Apps Script project itself is not exposing doPost globally; verify Api.gs is a .gs file in that exact project and saved.
+/dev also says “Script function not found: doPost” → the current Apps Script project is not exposing doPost.
 
-Top-level works + hidden iframe fails → browser/Google cross-site authentication or iframe boundary.
+Top-level works + hidden iframe fails → Google/browser iframe authentication boundary.
 
-Both work → production frontend bridge/listener issue.</div>
+Both work → production frontend bridge issue.</div>
   </div>
 </div>
 <script>
-(() => {
-  const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzh30zpmWNIKx-ulC-p7XhMNViHoMCdmUerVMqS6PEsr8oR9iMg2M5hX9fugmXTZ1-Hqg/exec';
-  const URL_STORAGE = 'dismissal-diagnostic-backend-url-v1';
-  const KEY_STORAGE = 'dismissal-device-key-v1';
-  let apiUrl = localStorage.getItem(URL_STORAGE) || DEFAULT_API_URL;
-  let key = localStorage.getItem(KEY_STORAGE) || '';
+(function () {
+  'use strict';
 
-  const backendInput = document.querySelector('#backendUrl');
-  const backendStatus = document.querySelector('#backendStatus');
-  const keyStatus = document.querySelector('#keyStatus');
-  const keyInput = document.querySelector('#deviceKey');
+  var DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzh30zpmWNIKx-ulC-p7XhMNViHoMCdmUerVMqS6PEsr8oR9iMg2M5hX9fugmXTZ1-Hqg/exec';
+  var URL_STORAGE = 'dismissal-diagnostic-backend-url-v1';
+  var KEY_STORAGE = 'dismissal-device-key-v1';
+  var apiUrl = localStorage.getItem(URL_STORAGE) || DEFAULT_API_URL;
+  var key = localStorage.getItem(KEY_STORAGE) || '';
 
-  function refreshBackendStatus() {
-    backendInput.value = apiUrl;
-    backendStatus.textContent = 'Testing: ' + apiUrl;
-    backendStatus.className = 'status ok';
+  function byId(id) { return document.getElementById(id); }
+  function setStatus(id, text, good) {
+    var el = byId(id);
+    el.textContent = text;
+    el.className = 'status ' + (good === true ? 'ok' : good === false ? 'bad' : '');
   }
 
-  function refreshKeyStatus() {
-    keyStatus.textContent = key ? 'Device key loaded. Length: ' + key.length + ' characters.' : 'No device key loaded. Paste one above.';
-    keyStatus.className = 'status ' + (key ? 'ok' : 'bad');
-    keyInput.value = '';
+  function validBackend(value) {
+    try {
+      var u = new URL(value);
+      return u.protocol === 'https:' &&
+        u.hostname === 'script.google.com' &&
+        (u.pathname.endsWith('/exec') || u.pathname.endsWith('/dev'));
+    } catch (err) {
+      return false;
+    }
   }
 
-  refreshBackendStatus();
-  refreshKeyStatus();
-
-  document.querySelector('#saveBackend').addEventListener('click', () => {
-    const entered = String(backendInput.value || '').trim();
-    if (!/^https:\/\/script\.google\.com\//i.test(entered) || !\/\/(?:exec|dev)(?:[?#]|$)/i.test(entered)) {
-      backendStatus.textContent = 'Paste a complete Apps Script web app URL ending in /exec or /dev.';
-      backendStatus.className = 'status bad';
-      return;
-    }
-    apiUrl = entered;
-    localStorage.setItem(URL_STORAGE, apiUrl);
-    refreshBackendStatus();
-  });
-
-  document.querySelector('#saveKey').addEventListener('click', () => {
-    const entered = String(keyInput.value || '').trim();
-    if (!entered) {
-      keyStatus.textContent = 'Paste the Access Key first.';
-      keyStatus.className = 'status bad';
-      return;
-    }
-    key = entered;
-    localStorage.setItem(KEY_STORAGE, key);
-    refreshKeyStatus();
-  });
+  function refresh() {
+    byId('backendUrl').value = apiUrl;
+    setStatus('backendStatus', 'Testing: ' + apiUrl, true);
+    byId('deviceKey').value = '';
+    setStatus('keyStatus', key ? 'Device key loaded. Length: ' + key.length + ' characters.' : 'No device key loaded. Paste one above.', Boolean(key));
+  }
 
   function makeForm(target, requestId) {
-    const form = document.createElement('form');
+    var form = document.createElement('form');
     form.method = 'POST';
     form.action = apiUrl;
     form.target = target;
     form.style.display = 'none';
-    const fields = { requestId, action: 'bootstrap', deviceKey: key, payload: JSON.stringify({view:'dispatcher'}) };
-    for (const [name,value] of Object.entries(fields)) {
-      const input = document.createElement('input');
-      input.type = 'hidden'; input.name = name; input.value = value;
+
+    var fields = {
+      requestId: requestId,
+      action: 'bootstrap',
+      deviceKey: key,
+      payload: JSON.stringify({ view: 'dispatcher' })
+    };
+
+    Object.keys(fields).forEach(function (name) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = fields[name];
       form.appendChild(input);
-    }
+    });
+
     document.body.appendChild(form);
     return form;
   }
 
-  document.querySelector('#topLevel').addEventListener('click', () => {
-    const status = document.querySelector('#topStatus');
-    if (!key) { status.textContent = 'Cannot test: enter a device key first.'; status.className='status bad'; return; }
-    const id = 'diag-top-' + Date.now();
-    const form = makeForm('_blank', id);
-    status.textContent = 'POST opened using:\n' + apiUrl + '\n\nRead the result in the new tab.';
-    status.className='status ok';
-    form.submit();
-    setTimeout(() => form.remove(), 1000);
+  byId('saveBackend').addEventListener('click', function () {
+    var entered = String(byId('backendUrl').value || '').trim();
+    if (!validBackend(entered)) {
+      setStatus('backendStatus', 'Paste a complete script.google.com web-app URL ending in /exec or /dev.', false);
+      return;
+    }
+    apiUrl = entered;
+    localStorage.setItem(URL_STORAGE, apiUrl);
+    setStatus('backendStatus', 'Testing: ' + apiUrl, true);
   });
 
-  document.querySelector('#iframeTest').addEventListener('click', () => {
-    const status = document.querySelector('#iframeStatus');
-    if (!key) { status.textContent = 'Cannot test: enter a device key first.'; status.className='status bad'; return; }
-    const id = 'diag-frame-' + Date.now();
-    const frameName = 'diag_frame_' + Date.now();
-    const iframe = document.createElement('iframe');
-    iframe.name = frameName; iframe.style.display='none';
+  byId('saveKey').addEventListener('click', function () {
+    var entered = String(byId('deviceKey').value || '').trim();
+    if (!entered) {
+      setStatus('keyStatus', 'Paste the Access Key first.', false);
+      return;
+    }
+    key = entered;
+    localStorage.setItem(KEY_STORAGE, key);
+    byId('deviceKey').value = '';
+    setStatus('keyStatus', 'Device key loaded. Length: ' + key.length + ' characters.', true);
+  });
+
+  byId('topLevel').addEventListener('click', function () {
+    if (!key) {
+      setStatus('topStatus', 'Cannot test: enter a device key first.', false);
+      return;
+    }
+    var id = 'diag-top-' + Date.now();
+    var form = makeForm('_blank', id);
+    setStatus('topStatus', 'POST opened using:\n' + apiUrl + '\n\nRead the result in the new tab.', true);
+    form.submit();
+    window.setTimeout(function () { form.remove(); }, 1000);
+  });
+
+  byId('iframeTest').addEventListener('click', function () {
+    if (!key) {
+      setStatus('iframeStatus', 'Cannot test: enter a device key first.', false);
+      return;
+    }
+
+    var id = 'diag-frame-' + Date.now();
+    var frameName = 'diag_frame_' + Date.now();
+    var iframe = document.createElement('iframe');
+    iframe.name = frameName;
+    iframe.style.display = 'none';
     document.body.appendChild(iframe);
-    const form = makeForm(frameName, id);
-    status.textContent = 'Waiting up to 15 seconds for Apps Script postMessage…\n' + apiUrl;
-    status.className='status';
-    let finished = false;
-    const listener = event => {
+
+    var form = makeForm(frameName, id);
+    var finished = false;
+    setStatus('iframeStatus', 'Waiting up to 15 seconds…\n' + apiUrl, null);
+
+    function listener(event) {
       if (!event.data || event.data.requestId !== id) return;
       finished = true;
       window.removeEventListener('message', listener);
-      status.textContent = 'Received response from Apps Script:\n' + JSON.stringify(event.data, null, 2);
-      status.className='status ok';
-      form.remove(); iframe.remove();
-    };
+      setStatus('iframeStatus', 'Received response:\n' + JSON.stringify(event.data, null, 2), true);
+      form.remove();
+      iframe.remove();
+    }
+
     window.addEventListener('message', listener);
     form.submit();
-    setTimeout(() => {
+
+    window.setTimeout(function () {
       if (finished) return;
       window.removeEventListener('message', listener);
-      status.textContent = 'Timed out. The hidden iframe did not return an Apps Script response.';
-      status.className='status bad';
-      form.remove(); iframe.remove();
+      setStatus('iframeStatus', 'Timed out. No Apps Script postMessage response was received.', false);
+      form.remove();
+      iframe.remove();
     }, 15000);
   });
+
+  refresh();
 })();
 </script>
 </body>
