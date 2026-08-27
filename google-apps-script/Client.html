@@ -1,0 +1,275 @@
+<script>
+(() => {
+  const S = {
+    boot: null,
+    view: '',
+    user: null,
+    allowedViews: [],
+    settings: {},
+    queueVersion: '',
+    pollTimer: null,
+    timerTick: null,
+    toastTimer: null,
+    scanQueue: [],
+    scanning: false,
+    qr: null,
+    adminDebounce: null
+  };
+
+  const $ = sel => document.querySelector(sel);
+  const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+
+  function call(name, ...args) {
+    return new Promise((resolve, reject) => {
+      const runner = google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(err => reject(new Error((err && err.message) || String(err))));
+      const methods = {
+        getBootstrap: () => runner.getBootstrap(...args),
+        getQueueSnapshot: () => runner.getQueueSnapshot(...args),
+        scanPickupGroup: () => runner.scanPickupGroup(...args),
+        updateDismissal: () => runner.updateDismissal(...args),
+        searchPickupDirectory: () => runner.searchPickupDirectory(...args),
+        resetTodayDismissal: () => runner.resetTodayDismissal(...args)
+      };
+      if (!methods[name]) return reject(new Error('Unknown server method: ' + name));
+      methods[name]();
+    });
+  }
+
+  async function boot() {
+    try {
+      S.boot = await call('getBootstrap', window.DISMISSAL_INITIAL_VIEW || 'dispatcher');
+      S.view = S.boot.view;
+      S.user = S.boot.user;
+      S.allowedViews = S.boot.allowedViews || [];
+      S.settings = S.boot.settings || {};
+      $('#boot').hidden = true;
+      $('#appbar').hidden = false;
+      $('#app').hidden = false;
+      $('#schoolName').textContent = S.settings.schoolName || 'Dismissal';
+      $('#menuButton').hidden = S.allowedViews.length < 2;
+      bindGlobal();
+      switchView(S.view);
+      S.timerTick = setInterval(updateTimers, 1000);
+    } catch (err) {
+      showFatal(err);
+    }
+  }
+
+  function bindGlobal() {
+    $('#menuButton').addEventListener('click', openMenu);
+    $('#modal').addEventListener('click', e => { if (e.target.closest('[data-close-modal]')) closeModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
+    document.addEventListener('pointerdown', e => { if (S.view === 'scanner' && $('#modal').hidden && !e.target.closest('button,input')) setTimeout(refocusScanner, 0); });
+  }
+
+  function switchView(view) {
+    if (!S.allowedViews.includes(view)) return;
+    stopPolling();
+    stopCamera();
+    S.view = view;
+    S.queueVersion = '';
+    $('#viewTitle').textContent = titleFor(view);
+    $('#headerSearch').hidden = view !== 'admin';
+    $('#appbar').classList.toggle('admin-mode', view === 'admin');
+    closeModal();
+
+    if (view === 'scanner') renderScanner();
+    else if (view === 'runner') renderQueueScreen('runner');
+    else if (view === 'dispatcher') renderQueueScreen('dispatcher');
+    else if (view === 'admin') renderAdmin();
+  }
+
+  function titleFor(view) {
+    return ({dispatcher:'Dispatcher',scanner:'Scanner',runner:'Runner',admin:'Admin'})[view] || 'Dismissal';
+  }
+
+  function identityChip() {
+    return `<div class="identity-chip">Signed in as <strong>${esc(S.user.name)}</strong></div>`;
+  }
+
+  function renderQueueScreen(view) {
+    $('#app').innerHTML = `${identityChip()}
+      <section class="screen-head">
+        <h1>${view === 'runner' ? 'Who needs you?' : 'Who are we waiting on?'}</h1>
+        <p>${view === 'runner' ? 'Tap a student. The next step will appear.' : 'Problem and long-wait pickups rise to the top automatically.'}</p>
+      </section>
+      ${view === 'dispatcher' ? `<section class="summary-row"><div class="summary-tile"><div class="summary-number" id="statActive">0</div><div class="summary-label">Waiting now</div></div><div class="summary-tile attention"><div class="summary-number" id="statProblem">0</div><div class="summary-label">Need attention</div></div></section><div class="completed-note" id="completedNote">0 completed today</div>` : ''}
+      <div class="section-label">Students waiting</div>
+      <section class="queue" id="queue"></section>`;
+    refreshQueue(true);
+    S.pollTimer = setInterval(() => refreshQueue(false), S.settings.pollIntervalMs || 4000);
+  }
+
+  async function refreshQueue(force) {
+    try {
+      const snap = await call('getQueueSnapshot', S.view);
+      if (S.view === 'dispatcher') {
+        $('#statActive').textContent = snap.stats.active;
+        $('#statProblem').textContent = snap.stats.problem;
+        $('#completedNote').textContent = `${snap.stats.completed} completed today`;
+      }
+      if (!force && snap.version === S.queueVersion) return;
+      S.queueVersion = snap.version;
+      renderQueue(snap.rows || []);
+    } catch (err) {
+      toast('Connection problem', err.message, false);
+    }
+  }
+
+  function renderQueue(rows) {
+    const root = $('#queue');
+    if (!root) return;
+    if (!rows.length) {
+      root.innerHTML = `<div class="empty-state"><div class="empty-icon">✓</div><strong>${S.view === 'runner' ? 'You are caught up' : 'All clear'}</strong><span>No students need action right now.</span></div>`;
+      return;
+    }
+    root.innerHTML = rows.map(row => studentCard(row)).join('');
+    root.querySelectorAll('[data-dismissal]').forEach(card => card.addEventListener('click', () => openStudent(rowById(rows, card.dataset.dismissal))));
+  }
+
+  function studentCard(row) {
+    const age = ageBand(row.scannedAt);
+    const progress = ['CLAIMED','ON_WAY'].includes(row.status);
+    const cls = row.needsAttention ? 'danger' : age === 'warn' ? 'warn' : progress ? 'progress' : '';
+    return `<button class="student-card ${cls}" type="button" data-dismissal="${esc(row.dismissalId)}">
+      <div class="grade-badge">${esc(shortGrade(row.grade))}</div>
+      <div><div class="student-name">${esc(row.studentName)}</div><div class="student-meta">${esc(row.grade || '—')} · ${esc(row.homeroom || '—')}</div><div class="pickup-meta">${esc(row.pickupGroup || '')}</div></div>
+      <div class="card-side"><div class="wait" data-time="${esc(row.scannedAt)}">${elapsed(row.scannedAt)}</div><div class="status">${esc(statusLabel(row))}</div></div><div class="chevron">›</div>
+    </button>`;
+  }
+
+  function rowById(rows, id) { return rows.find(r => r.dismissalId === id); }
+  function shortGrade(g) { const s=String(g||'—'); return s.replace(/^Grade\s*/i,'').slice(0,3); }
+  function statusLabel(row) {
+    const map={CALLED:'Waiting',CLAIMED:'Being picked up',ON_WAY:'On the way',CANT_FIND:"Can't find",CALL_AGAIN:'Call again'};
+    const base=map[row.status]||row.status;
+    return row.claimedByName ? `${base} · ${row.claimedByName}` : base;
+  }
+
+  function openStudent(row) {
+    if (!row) return;
+    const body = `<div class="modal-person"><strong>${esc(row.studentName)}</strong><div>${esc(row.grade || '—')} · ${esc(row.homeroom || '—')}</div><div>${esc(row.pickupGroup || '')}</div><div class="modal-wait">Waiting ${elapsed(row.scannedAt)}</div></div>`;
+    const actions=[];
+    if (S.view === 'runner') {
+      const mine = row.claimedByEmail === S.user.email;
+      if ((row.status === 'CALLED' || row.status === 'CALL_AGAIN') && (!row.claimedByEmail || mine)) actions.push(action("I'm getting them", 'CLAIM', 'primary'));
+      else if (mine && row.status === 'CLAIMED') {
+        actions.push(action('Student is on the way','ON_WAY','primary'));
+        actions.push(action("I can't find them",'CANT_FIND','warning'));
+        actions.push(action('Release student','RELEASE','secondary'));
+      } else if (mine && row.status === 'CANT_FIND') {
+        actions.push(action('Found them — on the way','ON_WAY','primary'));
+        actions.push(action('Release student','RELEASE','secondary'));
+      }
+    } else {
+      actions.push(action('Student is here','COMPLETE','primary'));
+      actions.push(action('Call again','CALL_AGAIN',row.needsAttention?'warning':'secondary'));
+    }
+    openModal(row.needsAttention ? 'Needs attention' : statusLabel(row), row.studentName, body, actions);
+    $('#modal').dataset.dismissalId = row.dismissalId;
+  }
+
+  function action(label, serverAction, kind) {
+    return {label,kind,onClick: async () => {
+      const id = $('#modal').dataset.dismissalId;
+      try {
+        await call('updateDismissal', id, serverAction);
+        closeModal();
+        await refreshQueue(true);
+      } catch (err) {
+        closeModal();
+        toast('Could not update student', err.message, false);
+        await refreshQueue(true);
+      }
+    }};
+  }
+
+  function renderScanner() {
+    $('#app').innerHTML = `<section class="scan-stage"><div class="scan-mark">▥</div><h1>Scan a car</h1><p>Point the barcode scanner at the family pass.</p><div class="scan-ready" id="scanState">Ready</div><form id="scanForm"><input id="barcodeInput" class="scan-hidden" autocomplete="off" autocapitalize="characters" inputmode="none"></form><button class="big-button secondary" id="cameraButton" type="button">Use phone camera</button><button class="text-button" id="manualButton" type="button">Can't scan?</button></section>`;
+    const input=$('#barcodeInput');
+    $('#scanForm').addEventListener('submit', e => {e.preventDefault();enqueueScan(input.value);input.value='';refocusScanner();});
+    $('#cameraButton').addEventListener('click', openCamera);
+    $('#manualButton').addEventListener('click', openManualScan);
+    setTimeout(refocusScanner,50);
+  }
+
+  function refocusScanner(){ const input=$('#barcodeInput'); if(input && $('#modal').hidden){ try{input.focus({preventScroll:true});}catch(e){input.focus();} } }
+  function enqueueScan(code){code=String(code||'').trim();if(!code)return;S.scanQueue.push(code);processScanQueue();}
+  async function processScanQueue(){
+    if(S.scanning || !S.scanQueue.length)return;
+    S.scanning=true;
+    while(S.scanQueue.length){
+      const code=S.scanQueue.shift();
+      setScanState(S.scanQueue.length?`${S.scanQueue.length+1} queued`:'Sending…');
+      try{
+        const result=await call('scanPickupGroup',code);
+        const names=[...(result.created||[]),...(result.existing||[])].map(x=>x.student.name).join(', ');
+        toast(result.group.name, names || 'Pickup called', true);
+      }catch(err){toast('Scan not accepted',err.message,false);}
+    }
+    S.scanning=false;setScanState('Ready');refocusScanner();
+  }
+  function setScanState(text){const el=$('#scanState');if(el)el.textContent=text;}
+
+  function openManualScan(){
+    openModal('Backup','Type the pickup code',`<label for="manualCode">Barcode number</label><input id="manualCode" style="width:100%;min-height:52px;margin-top:7px;padding:12px;border:2px solid var(--border);border-radius:10px" autocomplete="off" placeholder="Example: FAM-101">`,[
+      {label:'Find pickup',kind:'primary',onClick:()=>{const v=$('#manualCode').value;closeModal();enqueueScan(v);}}
+    ]);
+    setTimeout(()=>$('#manualCode')?.focus(),50);
+  }
+
+  async function openCamera(){
+    if(!window.Html5Qrcode){toast('Camera unavailable','The QR scanner library did not load.',false);return;}
+    openModal('Phone camera','Hold the barcode in the box','<div id="reader"></div>',[{label:'Stop camera',kind:'secondary',onClick:()=>{stopCamera();closeModal();}}],false);
+    try{
+      S.qr=new Html5Qrcode('reader');
+      await S.qr.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:180}},decoded=>{enqueueScan(decoded);stopCamera();closeModal();},()=>{});
+    }catch(err){stopCamera();closeModal();toast('Camera unavailable','Use the hardware scanner or type the code.',false);}
+  }
+  async function stopCamera(){ const qr=S.qr; S.qr=null; if(qr){try{await qr.stop();}catch(e){}} }
+
+  function renderAdmin() {
+    $('#app').innerHTML = `${identityChip()}<section class="screen-head"><h1>Find a pickup</h1><p>Search by family, barcode, student, grade, homeroom, or student ID.</p></section><div class="directory-meta" id="directoryMeta">Start typing above</div><section class="directory-list" id="directoryList"><div class="empty-state"><strong>Search the directory</strong><span>The full school roster is never rendered at once.</span></div></section>`;
+    const input=$('#directorySearch'); input.value='';
+    input.oninput=()=>{clearTimeout(S.adminDebounce);S.adminDebounce=setTimeout(()=>searchAdmin(input.value),250);};
+    setTimeout(()=>input.focus(),50);
+  }
+
+  async function searchAdmin(query){
+    query=String(query||'').trim();
+    if(!query){$('#directoryMeta').textContent='Start typing above';$('#directoryList').innerHTML='<div class="empty-state"><strong>Search the directory</strong><span>The full school roster is never rendered at once.</span></div>';return;}
+    $('#directoryMeta').textContent='Searching…';
+    try{
+      const result=await call('searchPickupDirectory',query);
+      $('#directoryMeta').textContent=`${result.total} result${result.total===1?'':'s'}${result.total>50?' · first 50 shown':''}`;
+      $('#directoryList').innerHTML=result.groups.length?result.groups.map(g=>`<article class="directory-card"><h2>${esc(g.name)}</h2><span class="directory-code">${esc(g.token)}</span>${g.students.map(s=>`<div class="directory-student"><strong>${esc(s.name)}</strong><span>${esc(s.grade)} · ${esc(s.homeroom)} · ${esc(s.id)}</span></div>`).join('')}</article>`).join(''):'<div class="empty-state"><strong>No matches</strong><span>Try another name, grade, or ID.</span></div>';
+    }catch(err){toast('Search failed',err.message,false);}
+  }
+
+  function openMenu(){
+    const body=`<div class="menu-list">${S.allowedViews.map(v=>`<button type="button" class="menu-link ${v===S.view?'current':''}" data-view="${v}"><span>${titleFor(v)}</span><span>${v===S.view?'Current':'›'}</span></button>`).join('')}</div>`;
+    openModal('Dismissal','Switch screen',body,[]);
+    $('#modalContent').querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
+  }
+
+  function openModal(eyebrow,title,body,actions=[],dismissible=true){
+    const modal=$('#modal'); modal.dataset.dismissible=String(dismissible); modal.dataset.dismissalId='';
+    $('#modalContent').innerHTML=`<div class="modal-eyebrow">${esc(eyebrow||'')}</div><h2 id="modalTitle">${esc(title)}</h2><div class="modal-body">${body||''}</div><div class="modal-actions">${actions.map((a,i)=>`<button class="modal-action ${esc(a.kind||'secondary')}" data-action="${i}">${esc(a.label)}</button>`).join('')}${dismissible?'<button class="modal-cancel" data-close-modal>Cancel</button>':''}</div>`;
+    modal.hidden=false;document.body.classList.add('modal-open');requestAnimationFrame(()=>modal.classList.add('show'));
+    $('#modalContent').querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>actions[Number(b.dataset.action)].onClick()));
+  }
+  function closeModal(){const modal=$('#modal');if(modal.hidden)return;if(modal.dataset.dismissible==='false'&&S.qr)return;modal.classList.remove('show');document.body.classList.remove('modal-open');setTimeout(()=>{modal.hidden=true;modal.dataset.dismissible='true';if(S.view==='scanner')refocusScanner();},160)}
+
+  function toast(title,detail,ok){clearTimeout(S.toastTimer);const t=$('#toast');t.className=`toast ${ok?'success':'error'}`;t.innerHTML=`<div class="toast-title">${esc(title)}</div><div class="toast-detail">${esc(detail||'')}</div>`;requestAnimationFrame(()=>t.classList.add('show'));S.toastTimer=setTimeout(()=>t.classList.remove('show'),ok?2600:4600)}
+  function elapsed(iso){const sec=Math.max(0,Math.floor((Date.now()-new Date(iso).getTime())/1000));return `${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`}
+  function ageBand(iso){const m=(Date.now()-new Date(iso).getTime())/60000;if(m>=Number(S.settings.dangerMinutes||10))return'danger';if(m>=Number(S.settings.warningMinutes||5))return'warn';return'normal'}
+  function updateTimers(){document.querySelectorAll('[data-time]').forEach(el=>{el.textContent=elapsed(el.dataset.time);const card=el.closest('.student-card');if(card&&!card.classList.contains('danger')){card.classList.toggle('warn',ageBand(el.dataset.time)==='warn');}})}
+  function stopPolling(){if(S.pollTimer){clearInterval(S.pollTimer);S.pollTimer=null}}
+
+  function showFatal(err){$('#boot').hidden=true;$('#appbar').hidden=true;const app=$('#app');app.hidden=false;app.innerHTML=`<section class="error-screen"><h1>Dismissal could not open</h1><p>${esc(err.message)}</p><p>If this is the first setup, run <strong>setupDismissalSystem()</strong> from the Apps Script editor and add your account to the Staff sheet.</p></section>`}
+
+  window.addEventListener('load',boot);
+})();
+</script>

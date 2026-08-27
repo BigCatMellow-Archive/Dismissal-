@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="theme-color" content="#214289">
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <div id="boot" class="boot-screen">
+    <div class="boot-mark">D</div>
+    <strong>Loading Dismissal…</strong>
+  </div>
+
+  <header class="appbar" id="appbar" hidden>
+    <div class="brand-block">
+      <span class="school-name" id="schoolName">Dismissal</span>
+      <strong class="view-title" id="viewTitle">Dismissal</strong>
+    </div>
+    <div class="header-search" id="headerSearch" hidden>
+      <input id="directorySearch" type="search" autocomplete="off" placeholder="Name, Grade, or ID" aria-label="Search pickup directory">
+    </div>
+    <button class="menu-button" id="menuButton" type="button">Menu</button>
+  </header>
+
+  <main id="app" hidden></main>
+  <div id="toast" class="toast" aria-live="assertive"></div>
+
+  <div id="modal" class="modal-layer" hidden>
+    <div class="modal-backdrop" data-close-modal></div>
+    <section class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-grab"></div>
+      <div id="modalContent"></div>
+    </section>
+  </div>
+
+  <script>window.DISMISSAL_INITIAL_VIEW = <?!= JSON.stringify(requestedView) ?>;</script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <?!= include('Client'); ?>
+</body>
+</html>
