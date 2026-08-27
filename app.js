@@ -1,5 +1,6 @@
 const STORE_KEY = 'dismissal-prototype-v1';
 const ACTOR_KEY = 'dismissal-actor';
+let modalReturnFocus = null;
 
 const DEMO = {
   pickupGroups: [
@@ -224,10 +225,10 @@ function ensureModalRoot() {
     </section>`;
   document.body.appendChild(root);
   root.addEventListener('click', e => {
-    if (e.target.closest('[data-modal-close]')) closeModal();
+    if (e.target.closest('[data-modal-close]') && root.dataset.dismissible !== 'false') closeModal();
   });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !root.hidden) closeModal();
+    if (e.key === 'Escape' && !root.hidden && root.dataset.dismissible !== 'false') closeModal();
   });
   return root;
 }
@@ -235,6 +236,8 @@ function ensureModalRoot() {
 function openModal({ eyebrow = '', title, body = '', actions = [], dismissible = true }) {
   const root = ensureModalRoot();
   const content = root.querySelector('#modalContent');
+  modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  root.dataset.dismissible = String(dismissible);
   content.innerHTML = `${eyebrow ? `<div class="modal-eyebrow">${escapeHtml(eyebrow)}</div>` : ''}
     <h2 id="modalTitle">${escapeHtml(title)}</h2>
     ${body ? `<div class="modal-body">${body}</div>` : ''}
@@ -261,9 +264,17 @@ function openModal({ eyebrow = '', title, body = '', actions = [], dismissible =
 function closeModal() {
   const root = document.querySelector('#appModal');
   if (!root || root.hidden) return;
+  const returnTarget = modalReturnFocus;
   root.classList.remove('show');
   document.body.classList.remove('modal-open');
-  setTimeout(() => { root.hidden = true; }, 160);
+  setTimeout(() => {
+    root.hidden = true;
+    root.dataset.dismissible = 'true';
+    if (returnTarget?.isConnected) {
+      try { returnTarget.focus({ preventScroll: true }); } catch (_) { returnTarget.focus?.(); }
+    }
+    window.dispatchEvent(new CustomEvent('dismissal-modal-closed'));
+  }, 160);
 }
 
 function personSummary(student, dismissal, group) {
@@ -320,6 +331,8 @@ function openDismissalModal(id, options = {}) {
 function openNameModal({ required = false, onSave } = {}) {
   const root = ensureModalRoot();
   const content = root.querySelector('#modalContent');
+  modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  root.dataset.dismissible = String(!required);
   const current = getActor();
   content.innerHTML = `<div class="modal-eyebrow">Runner</div>
     <h2 id="modalTitle">Who are you?</h2>
