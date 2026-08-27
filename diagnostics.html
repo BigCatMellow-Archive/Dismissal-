@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Dismissal Diagnostics</title>
   <style>
-    :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1f2937;background:#f0f2f7}*{box-sizing:border-box}body{margin:0;padding:24px}.wrap{max-width:760px;margin:auto}.card{background:#fff;border:1px solid #e2e5eb;border-radius:16px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px}h1,h2{margin-top:0}button{width:100%;min-height:54px;border:0;border-radius:12px;background:#214289;color:#fff;font-weight:800;font-size:1rem;padding:12px;margin-top:10px}button.secondary{background:#fff;color:#214289;border:1px solid #d7dce5}.status{margin-top:14px;padding:12px;border-radius:10px;background:#f7f8fb;white-space:pre-wrap;word-break:break-word}.ok{border-left:5px solid #059669}.bad{border-left:5px solid #dc2626}.muted{color:#6b7280;font-size:.9rem}code{word-break:break-all}</style>
+    :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1f2937;background:#f0f2f7}*{box-sizing:border-box}body{margin:0;padding:24px}.wrap{max-width:760px;margin:auto}.card{background:#fff;border:1px solid #e2e5eb;border-radius:16px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px}h1,h2{margin-top:0}button{width:100%;min-height:54px;border:0;border-radius:12px;background:#214289;color:#fff;font-weight:800;font-size:1rem;padding:12px;margin-top:10px}button.secondary{background:#fff;color:#214289;border:1px solid #d7dce5}input{width:100%;min-height:52px;border:1px solid #cbd5e1;border-radius:10px;padding:10px 12px;font:inherit;margin-top:8px}.status{margin-top:14px;padding:12px;border-radius:10px;background:#f7f8fb;white-space:pre-wrap;word-break:break-word}.ok{border-left:5px solid #059669}.bad{border-left:5px solid #dc2626}.muted{color:#6b7280;font-size:.9rem}code{word-break:break-all}</style>
 </head>
 <body>
 <div class="wrap">
@@ -13,6 +13,10 @@
     <h1>Dismissal connection diagnostics</h1>
     <p>This page tests the exact GitHub Pages → Apps Script boundary without changing your dismissal data.</p>
     <div class="status" id="keyStatus"></div>
+    <label for="deviceKey"><strong>Device Access Key</strong></label>
+    <input id="deviceKey" type="password" autocomplete="off" placeholder="Paste the Access Key from the Devices sheet">
+    <button id="saveKey" class="secondary">Use this key for diagnostics</button>
+    <p class="muted">The key is stored only in this browser's local storage, the same place the main GitHub Dismissal app uses.</p>
   </div>
 
   <div class="card">
@@ -42,10 +46,28 @@ Both work → the production app bridge/listener has a frontend bug.</div>
 (() => {
   const API_URL = 'https://script.google.com/macros/s/AKfycbyZQkRRZC_coeL2fw3RJIDlMyzdPWtXIqJfYtSino_NFvNo-dp46LdPoP5S4-Zl6-fM4A/exec';
   const KEY_STORAGE = 'dismissal-device-key-v1';
-  const key = localStorage.getItem(KEY_STORAGE) || '';
+  let key = localStorage.getItem(KEY_STORAGE) || '';
   const keyStatus = document.querySelector('#keyStatus');
-  keyStatus.textContent = key ? 'Device key found in this browser. Length: ' + key.length + ' characters.' : 'No device key is stored in this browser. Connect the device in the main Dismissal page first.';
-  keyStatus.classList.add(key ? 'ok' : 'bad');
+  const keyInput = document.querySelector('#deviceKey');
+
+  function refreshKeyStatus() {
+    keyStatus.textContent = key ? 'Device key loaded in this browser. Length: ' + key.length + ' characters.' : 'No device key is stored in this browser. Paste one below.';
+    keyStatus.className = 'status ' + (key ? 'ok' : 'bad');
+    keyInput.value = '';
+  }
+  refreshKeyStatus();
+
+  document.querySelector('#saveKey').addEventListener('click', () => {
+    const entered = String(keyInput.value || '').trim();
+    if (!entered) {
+      keyStatus.textContent = 'Paste the Access Key first.';
+      keyStatus.className = 'status bad';
+      return;
+    }
+    key = entered;
+    localStorage.setItem(KEY_STORAGE, key);
+    refreshKeyStatus();
+  });
 
   function makeForm(target, requestId) {
     const form = document.createElement('form');
@@ -53,12 +75,7 @@ Both work → the production app bridge/listener has a frontend bug.</div>
     form.action = API_URL;
     form.target = target;
     form.style.display = 'none';
-    const fields = {
-      requestId,
-      action: 'bootstrap',
-      deviceKey: key,
-      payload: JSON.stringify({view:'dispatcher'})
-    };
+    const fields = { requestId, action: 'bootstrap', deviceKey: key, payload: JSON.stringify({view:'dispatcher'}) };
     for (const [name,value] of Object.entries(fields)) {
       const input = document.createElement('input');
       input.type = 'hidden'; input.name = name; input.value = value;
@@ -70,7 +87,7 @@ Both work → the production app bridge/listener has a frontend bug.</div>
 
   document.querySelector('#topLevel').addEventListener('click', () => {
     const status = document.querySelector('#topStatus');
-    if (!key) { status.textContent = 'Cannot test: no device key is stored.'; status.className='status bad'; return; }
+    if (!key) { status.textContent = 'Cannot test: enter a device key above first.'; status.className='status bad'; return; }
     const id = 'diag-top-' + Date.now();
     const form = makeForm('_blank', id);
     status.textContent = 'POST opened in a new tab. After it loads, return here. Check whether the Devices → Last Seen timestamp changed.';
@@ -81,7 +98,7 @@ Both work → the production app bridge/listener has a frontend bug.</div>
 
   document.querySelector('#iframeTest').addEventListener('click', () => {
     const status = document.querySelector('#iframeStatus');
-    if (!key) { status.textContent = 'Cannot test: no device key is stored.'; status.className='status bad'; return; }
+    if (!key) { status.textContent = 'Cannot test: enter a device key above first.'; status.className='status bad'; return; }
     const id = 'diag-frame-' + Date.now();
     const frameName = 'diag_frame_' + Date.now();
     const iframe = document.createElement('iframe');
