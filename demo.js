@@ -5,7 +5,7 @@
   if (params.get('demo') !== '1') return;
 
   const DEVICE_KEY_STORAGE = 'dismissal-device-key-v1';
-  const DEMO_STATE_STORAGE = 'dismissal-demo-state-v1';
+  const DEMO_STATE_STORAGE = 'dismissal-demo-state-v2';
   const DEMO_EMAIL = 'demo@local';
   const DEMO_NAME = 'Demo Device';
 
@@ -32,16 +32,16 @@
       version: 1,
       dismissals: [
         {
-          dismissalId: 'D-001', studentId: 'S-001', studentName: 'Ava Morgan', grade: '3', homeroom: 'Room 3B',
-          pickupGroup: 'Family 101', status: 'CALLED', claimedByEmail: '', claimedByName: '', scannedAt: isoMinutesAgo(2), updatedAt: isoMinutesAgo(2)
+          dismissalId: 'W-001', studentId: 'W-001', studentName: 'Olivia Reed', grade: '6', homeroom: 'Room 6B',
+          pickupGroup: 'Walker Pickup', status: 'CALLED', claimedByEmail: '', claimedByName: '', scannedAt: isoMinutesAgo(2), updatedAt: isoMinutesAgo(2)
         },
         {
-          dismissalId: 'D-002', studentId: 'S-003', studentName: 'Noah Bennett', grade: '2', homeroom: 'Room 2C',
-          pickupGroup: 'Family 202', status: 'CALL_AGAIN', claimedByEmail: '', claimedByName: '', scannedAt: isoMinutesAgo(12), updatedAt: isoMinutesAgo(1)
+          dismissalId: 'W-002', studentId: 'W-002', studentName: 'Jackson Hill', grade: '2', homeroom: 'Room 2A',
+          pickupGroup: 'Family 550', status: 'CALL_AGAIN', claimedByEmail: '', claimedByName: '', scannedAt: isoMinutesAgo(12), updatedAt: isoMinutesAgo(1)
         },
         {
-          dismissalId: 'D-003', studentId: 'S-004', studentName: 'Maya Chen', grade: '4', homeroom: 'Room 4A',
-          pickupGroup: 'Tuesday Carpool', status: 'CALLED', claimedByEmail: '', claimedByName: '', scannedAt: isoMinutesAgo(7), updatedAt: isoMinutesAgo(7)
+          dismissalId: 'W-003', studentId: 'W-003', studentName: 'Sophia Patel', grade: '4', homeroom: 'Room 4C',
+          pickupGroup: 'Afternoon Carpool', status: 'CALLED', claimedByEmail: '', claimedByName: '', scannedAt: isoMinutesAgo(7), updatedAt: isoMinutesAgo(7)
         }
       ]
     };
@@ -52,13 +52,13 @@
       const raw = sessionStorage.getItem(DEMO_STATE_STORAGE);
       if (raw) return JSON.parse(raw);
     } catch (_) {}
-    const state = initialState();
-    saveState(state);
-    return state;
+    const fresh = initialState();
+    saveState(fresh);
+    return fresh;
   }
 
-  function saveState(state) {
-    try { sessionStorage.setItem(DEMO_STATE_STORAGE, JSON.stringify(state)); } catch (_) {}
+  function saveState(next) {
+    try { sessionStorage.setItem(DEMO_STATE_STORAGE, JSON.stringify(next)); } catch (_) {}
   }
 
   let state = loadState();
@@ -109,7 +109,7 @@
     const allowedViews = ['dispatcher', 'scanner', 'runner', 'admin'];
     const view = allowedViews.includes(requestedView) ? requestedView : 'dispatcher';
     return {
-      version: 'demo-local',
+      version: 'demo-local-v2',
       user: { email: DEMO_EMAIL, name: DEMO_NAME, roles: ['admin'] },
       view,
       allowedViews,
@@ -162,13 +162,46 @@
     return { ...row, needsAttention: danger };
   }
 
+  function normalizedDynamicId(code) {
+    const clean = code.replace(/[^A-Z0-9]/g, '').slice(0, 24) || 'CODE';
+    return `DYN-${clean}`;
+  }
+
+  function ensureDemoGroup(code) {
+    const existing = Object.values(groups).find(item => item.token.toUpperCase() === code);
+    if (existing) return existing;
+
+    const id = normalizedDynamicId(code);
+    const studentId = `${id}-S`;
+    if (!students[studentId]) {
+      students[studentId] = {
+        id: studentId,
+        name: `Demo Student ${code}`,
+        grade: '3',
+        homeroom: 'Demo Room',
+        active: true
+      };
+    }
+    if (!groups[id]) {
+      groups[id] = {
+        id,
+        name: `Demo Pickup ${code}`,
+        token: code,
+        type: 'demo',
+        studentIds: [studentId]
+      };
+    }
+    return groups[id];
+  }
+
   function scan(rawCode) {
     const code = String(rawCode || '').trim().toUpperCase();
-    const group = Object.values(groups).find(item => item.token.toUpperCase() === code);
-    if (!group) throw new Error('Barcode not recognized. Demo codes are 101, 202, and 303.');
+    if (!code) throw new Error('No barcode was received.');
 
+    const group = ensureDemoGroup(code);
     const created = [];
     const existing = [];
+
     group.studentIds.forEach(studentId => {
       const student = students[studentId];
       const open = state.dismissals.find(row => row.studentId === studentId && row.status !== 'COMPLETE');
@@ -242,7 +275,7 @@
     if (!query) return { total: 0, groups: [] };
 
     const matches = Object.values(groups).filter(group => {
-      const memberStudents = group.studentIds.map(id => students[id]);
+      const memberStudents = group.studentIds.map(id => students[id]).filter(Boolean);
       const haystack = [group.name, group.token, group.type]
         .concat(memberStudents.flatMap(student => [student.name, student.grade, student.homeroom, student.id]))
         .join(' ')
@@ -257,7 +290,7 @@
         name: group.name,
         token: group.token,
         type: group.type,
-        students: group.studentIds.map(id => students[id]).map(student => ({
+        students: group.studentIds.map(id => students[id]).filter(Boolean).map(student => ({
           id: student.id,
           name: student.name,
           grade: student.grade,
@@ -268,7 +301,7 @@
   }
 
   function resetToday() {
-    state.dismissals = [];
+    state = initialState();
     bump();
     return { ok: true };
   }
